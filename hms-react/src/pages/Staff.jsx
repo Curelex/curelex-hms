@@ -53,10 +53,9 @@ const fmt = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
 const avatarColor = (name = '') =>
   AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length];
 
-// ── Inline styles (no external CSS deps beyond existing vars) ──────────────
+// ── Inline styles ──────────────────────────────────────────────
 
 const css = {
-  // Page shell
   page: {
     padding: '0',
     fontFamily: "'Segoe UI', system-ui, sans-serif",
@@ -69,21 +68,15 @@ const css = {
   pageTitle: {
     fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0,
   },
-
-  // Filter bar
   filterBar: {
     display: 'flex', alignItems: 'center', gap: 12,
     flexWrap: 'wrap', marginBottom: 18,
   },
-
-  // Card grid
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
     gap: 16,
   },
-
-  // Individual staff card
   card: {
     background: '#fff',
     borderRadius: 14,
@@ -96,32 +89,26 @@ const css = {
     flexDirection: 'column',
     gap: 14,
   },
-
   cardTop: {
     display: 'flex', alignItems: 'flex-start', gap: 12,
   },
-
   avatar: (name) => ({
     width: 44, height: 44, borderRadius: 12,
     background: avatarColor(name),
     color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
     fontWeight: 800, fontSize: 18, flexShrink: 0,
   }),
-
   cardInfo: {
     flex: 1, minWidth: 0,
   },
-
   cardName: {
     fontSize: 15, fontWeight: 700, color: '#0f172a',
     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
   },
-
   cardEmail: {
     fontSize: 12, color: '#64748b', marginTop: 2,
     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
   },
-
   roleBadge: (role) => {
     const s = ROLE_STYLE[role] || { bg: '#f1f5f9', color: '#475569' };
     return {
@@ -132,66 +119,52 @@ const css = {
       marginTop: 5, width: 'fit-content',
     };
   },
-
   roleDot: (role) => ({
     width: 6, height: 6, borderRadius: '50%',
     background: (ROLE_STYLE[role] || {}).dot || '#94a3b8',
     flexShrink: 0,
   }),
-
   statusDot: (active) => ({
     display: 'inline-flex', alignItems: 'center', gap: 5,
     fontSize: 11, fontWeight: 600,
     color: active ? '#059669' : '#dc2626',
   }),
-
-  // Meta row (dept, phone)
   metaRow: {
     display: 'flex', gap: 8, flexWrap: 'wrap',
   },
-
   metaChip: {
     display: 'flex', alignItems: 'center', gap: 5,
     padding: '4px 10px', borderRadius: 8,
     background: '#f8fafc', border: '1px solid #e2e8f0',
     fontSize: 12, color: '#475569',
   },
-
-  // Modules strip
   modulesLabel: {
     fontSize: 11, fontWeight: 600, color: '#94a3b8',
     textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6,
   },
-
   modulesWrap: {
     display: 'flex', flexWrap: 'wrap', gap: 5,
   },
-
   moduleTag: {
     fontSize: 11, padding: '3px 9px', borderRadius: 20,
     background: '#dbeafe', color: '#1e40af',
     fontWeight: 500,
   },
-
   allModulesTag: {
     fontSize: 11, padding: '3px 9px', borderRadius: 20,
     background: '#fee2e2', color: '#dc2626',
     fontWeight: 600,
   },
-
-  // Card footer
   cardFooter: {
     display: 'flex', gap: 8, justifyContent: 'flex-end',
     paddingTop: 10, borderTop: '1px solid #f1f5f9',
   },
-
   btnToday: {
     padding: '6px 14px', borderRadius: 8, border: 'none',
     background: '#0f4c81', color: '#fff',
     fontSize: 12, fontWeight: 600, cursor: 'pointer',
     display: 'flex', alignItems: 'center', gap: 5,
   },
-
   btnEdit: {
     padding: '6px 14px', borderRadius: 8,
     border: '1px solid #e2e8f0', background: '#fff',
@@ -208,6 +181,8 @@ export default function Staff() {
   const [filterRole,  setFilterRole]  = useState('');
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState('');
+  // ✅ NEW: track if email field was touched to show inline hint
+  const [emailTouched, setEmailTouched] = useState(false);
 
   const [workPanel,   setWorkPanel]   = useState(null);
   const [workData,    setWorkData]    = useState(null);
@@ -262,8 +237,18 @@ export default function Staff() {
     setForm(f => ({ ...f, permissions: hasAll ? ['dashboard'] : allKeys }));
   };
 
+  // ✅ Check if entered email already exists among current users (client-side hint)
+  const emailAlreadyExists = !editId
+    ? users.some(u => u.email.toLowerCase() === form.email.toLowerCase() && form.email !== '')
+    : users.some(u => u.email.toLowerCase() === form.email.toLowerCase() && u._id !== editId && form.email !== '');
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // ✅ Block submit instantly if email duplicate detected client-side
+    if (emailAlreadyExists) {
+      setError('This email is already registered in our system');
+      return;
+    }
     setSaving(true); setError('');
     try {
       if (editId) {
@@ -273,8 +258,9 @@ export default function Staff() {
       } else {
         await API.post('/auth/register', form);
       }
-      setModal(false); setForm(emptyForm); setEditId(null); fetchUsers();
+      setModal(false); setForm(emptyForm); setEditId(null); setEmailTouched(false); fetchUsers();
     } catch (err) {
+      // ✅ Shows the exact message returned from backend
       setError(err.response?.data?.message || 'Something went wrong');
     } finally {
       setSaving(false);
@@ -287,10 +273,10 @@ export default function Staff() {
       role: u.role, department: u.department || '', phone: u.phone || '',
       permissions: u.permissions?.length ? u.permissions : (ROLE_DEFAULTS[u.role] || ['dashboard']),
     });
-    setEditId(u._id); setError(''); setModal(true);
+    setEditId(u._id); setError(''); setEmailTouched(false); setModal(true);
   };
 
-  const openAdd = () => { setForm(emptyForm); setEditId(null); setError(''); setModal(true); };
+  const openAdd = () => { setForm(emptyForm); setEditId(null); setError(''); setEmailTouched(false); setModal(true); };
 
   const filtered = filterRole ? users.filter(u => u.role === filterRole) : users;
   const isAdminRole = (role) => role === 'admin';
@@ -367,14 +353,13 @@ export default function Staff() {
               overflowY: 'auto',
             }}
           >
-            {/* ── Modal header ── */}
+            {/* Modal header */}
             <div style={{
               background: 'linear-gradient(135deg, #0a1f3d 0%, #0f4c81 60%, #1565a8 100%)',
               padding: '24px 24px 20px',
               flexShrink: 0,
               position: 'relative',
             }}>
-              {/* Close button */}
               <button
                 onClick={closeWorkPanel}
                 style={{
@@ -387,7 +372,6 @@ export default function Staff() {
                 }}
               >×</button>
 
-              {/* Staff identity */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                 <div style={{
                   width: 58, height: 58, borderRadius: 16,
@@ -419,7 +403,6 @@ export default function Staff() {
                 </div>
               </div>
 
-              {/* Date strip */}
               <div style={{
                 marginTop: 16,
                 display: 'flex', alignItems: 'center', gap: 6,
@@ -432,7 +415,7 @@ export default function Staff() {
               </div>
             </div>
 
-            {/* ── Modal body ── */}
+            {/* Modal body */}
             <div style={{ flex: 1, padding: '20px 24px 24px', background: '#f8fafc' }}>
               {workLoading ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '50px 0', gap: 14 }}>
@@ -447,7 +430,6 @@ export default function Staff() {
                 </div>
               ) : workData ? (
                 <>
-                  {/* Revenue banner */}
                   <div style={{
                     background: 'linear-gradient(135deg, #0f4c81 0%, #0369a1 100%)',
                     borderRadius: 14, padding: '16px 20px', marginBottom: 16,
@@ -470,7 +452,6 @@ export default function Staff() {
                     }}>💰</div>
                   </div>
 
-                  {/* Stats grid */}
                   {(workData.billing.total > 0 || workData.tokens.generated > 0 || workData.doctorTokens.total > 0 || workData.lab.total > 0 || workData.pharmacy.total > 0) ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 20 }}>
                       {workData.billing.total > 0 && <WorkCard icon="💳" title="Billing" main={fmt(workData.billing.revenue)} sub={`${workData.billing.total} bills · ${workData.billing.paid} paid`} color="#0f4c81" />}
@@ -480,7 +461,6 @@ export default function Staff() {
                       {workData.pharmacy.total > 0 && <WorkCard icon="💊" title="Prescriptions" main={workData.pharmacy.total} sub={`Revenue: ${fmt(workData.pharmacy.revenue)}`} color="#b45309" />}
                     </div>
                   ) : (
-                    /* No activity empty state */
                     <div style={{
                       background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0',
                       padding: '40px 24px', textAlign: 'center', marginBottom: 16,
@@ -500,7 +480,6 @@ export default function Staff() {
                     </div>
                   )}
 
-                  {/* Recent bills */}
                   {workData.billing.bills?.length > 0 && (
                     <Section title="Recent Bills Today">
                       {workData.billing.bills.map((b, i) => (
@@ -509,7 +488,6 @@ export default function Staff() {
                     </Section>
                   )}
 
-                  {/* Doctor token list */}
                   {workData.doctorTokens.list?.length > 0 && (
                     <Section title="Token Queue — My Patients">
                       {workData.doctorTokens.list.map((t, i) => (
@@ -518,7 +496,6 @@ export default function Staff() {
                     </Section>
                   )}
 
-                  {/* Lab list */}
                   {workData.lab.list?.length > 0 && (
                     <Section title="Lab Orders Today">
                       {workData.lab.list.map((l, i) => (
@@ -545,18 +522,54 @@ export default function Staff() {
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div className="form-group">
                   <label className="form-label">Full Name *</label>
-                  <input className="form-control" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
+                  <input
+                    className="form-control"
+                    value={form.name}
+                    onChange={e => setForm({ ...form, name: e.target.value })}
+                    required
+                  />
                 </div>
+
                 <div className="form-row">
+                  {/* ✅ Email field with inline duplicate warning */}
                   <div className="form-group">
                     <label className="form-label">Email *</label>
-                    <input className="form-control" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} required />
+                    <input
+                      className="form-control"
+                      type="email"
+                      value={form.email}
+                      onChange={e => {
+                        setForm({ ...form, email: e.target.value });
+                        setError(''); // clear submit error while typing
+                      }}
+                      onBlur={() => setEmailTouched(true)}
+                      required
+                      style={emailTouched && emailAlreadyExists ? { borderColor: '#dc2626', background: '#fff5f5' } : {}}
+                    />
+                    {/* ✅ Inline warning shown as soon as user leaves the email field */}
+                    {emailTouched && emailAlreadyExists && (
+                      <div style={{
+                        marginTop: 5,
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        fontSize: 12, color: '#dc2626', fontWeight: 500,
+                      }}>
+                        ⚠️ This email is already registered in our system
+                      </div>
+                    )}
                   </div>
+
                   <div className="form-group">
                     <label className="form-label">{editId ? 'New Password (leave blank to keep)' : 'Password *'}</label>
-                    <input className="form-control" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} {...(!editId && { required: true })} />
+                    <input
+                      className="form-control"
+                      type="password"
+                      value={form.password}
+                      onChange={e => setForm({ ...form, password: e.target.value })}
+                      {...(!editId && { required: true })}
+                    />
                   </div>
                 </div>
+
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Role *</label>
@@ -572,6 +585,7 @@ export default function Staff() {
                     </select>
                   </div>
                 </div>
+
                 <div className="form-group">
                   <label className="form-label">Phone</label>
                   <input className="form-control" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
@@ -632,15 +646,27 @@ export default function Staff() {
                   )}
                 </div>
 
+                {/* ✅ Error banner — shown on submit failure from backend */}
                 {error && (
-                  <div style={{ padding: '10px 14px', borderRadius: 8, background: '#fee2e2', color: '#dc2626', fontSize: 13 }}>
-                    {error}
+                  <div style={{
+                    padding: '10px 14px', borderRadius: 8,
+                    background: '#fee2e2', color: '#dc2626',
+                    fontSize: 13, display: 'flex', alignItems: 'center', gap: 8,
+                    border: '1px solid #fecaca',
+                  }}>
+                    🚫 {error}
                   </div>
                 )}
               </div>
+
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={() => setModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={saving || emailAlreadyExists}
+                  style={emailAlreadyExists ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                >
                   {saving ? 'Saving…' : (editId ? 'Update Staff' : 'Add Staff')}
                 </button>
               </div>
@@ -655,7 +681,6 @@ export default function Staff() {
 // ── Staff Card ──────────────────────────────────────────────────────────────
 function StaffCard({ u, onWork, onEdit }) {
   const [hovered, setHovered] = useState(false);
-  const roleStyle = ROLE_STYLE[u.role] || { bg: '#f1f5f9', color: '#475569', dot: '#94a3b8' };
   const modules = u.role === 'admin' ? null : (u.permissions || ['dashboard']);
 
   return (
@@ -669,7 +694,6 @@ function StaffCard({ u, onWork, onEdit }) {
       onMouseLeave={() => setHovered(false)}
       onClick={onWork}
     >
-      {/* Top: avatar + name + role */}
       <div style={css.cardTop}>
         <div style={css.avatar(u.name)}>
           {u.name?.[0]?.toUpperCase()}
@@ -690,23 +714,13 @@ function StaffCard({ u, onWork, onEdit }) {
         </div>
       </div>
 
-      {/* Meta: dept + phone */}
       {(u.department || u.phone) && (
         <div style={css.metaRow}>
-          {u.department && (
-            <span style={css.metaChip}>
-              🏢 {u.department}
-            </span>
-          )}
-          {u.phone && (
-            <span style={css.metaChip}>
-              📞 {u.phone}
-            </span>
-          )}
+          {u.department && <span style={css.metaChip}>🏢 {u.department}</span>}
+          {u.phone && <span style={css.metaChip}>📞 {u.phone}</span>}
         </div>
       )}
 
-      {/* Module access */}
       <div>
         <div style={css.modulesLabel}>Module Access</div>
         <div style={css.modulesWrap}>
@@ -723,14 +737,9 @@ function StaffCard({ u, onWork, onEdit }) {
         </div>
       </div>
 
-      {/* Footer actions */}
       <div style={css.cardFooter} onClick={e => e.stopPropagation()}>
-        <button style={css.btnToday} onClick={onWork}>
-          📊 Today's Work
-        </button>
-        <button style={css.btnEdit} onClick={onEdit}>
-          ✏️ Edit
-        </button>
+        <button style={css.btnToday} onClick={onWork}>📊 Today's Work</button>
+        <button style={css.btnEdit} onClick={onEdit}>✏️ Edit</button>
       </div>
     </div>
   );

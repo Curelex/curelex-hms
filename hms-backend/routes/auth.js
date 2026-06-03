@@ -30,7 +30,8 @@ router.post('/register', async (req, res) => {
   try {
     const { name, email, password, role, department, phone, permissions } = req.body;
     const exists = await User.findOne({ email });
-    if (exists) return res.status(400).json({ message: 'User already exists' });
+    // ✅ CHANGED: clearer message shown directly in the Add Staff modal
+    if (exists) return res.status(400).json({ message: 'This email is already registered in our system' });
 
     const resolvedPerms = role === 'admin'
       ? ALL_PERMISSIONS
@@ -59,7 +60,6 @@ router.post('/login', async (req, res) => {
       return res.status(403).json({ message: 'Account is inactive. Contact admin.' });
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    // Return user with permissions so the frontend has them immediately after login
     res.json({ token, user: userPayload(user) });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -67,8 +67,6 @@ router.post('/login', async (req, res) => {
 });
 
 // ── Get own profile — called on every app boot ─────────────────
-// This is the key endpoint: AuthContext calls this with the stored
-// token on every page refresh. Returns fresh permissions from DB.
 router.get('/profile', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('-password');
@@ -92,8 +90,15 @@ router.get('/users', auth, async (req, res) => {
 // ── Update user (admin) ────────────────────────────────────────
 router.put('/users/:id', auth, async (req, res) => {
   try {
-    const { password, permissions, role, ...rest } = req.body;
+    const { password, permissions, role, email, ...rest } = req.body;
     const update = { ...rest };
+
+    // ✅ ADDED: check for duplicate email when editing (skip self)
+    if (email) {
+      const existing = await User.findOne({ email, _id: { $ne: req.params.id } });
+      if (existing) return res.status(400).json({ message: 'This email is already registered in our system' });
+      update.email = email;
+    }
 
     if (role) update.role = role;
     update.permissions = role === 'admin'
