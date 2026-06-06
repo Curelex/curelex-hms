@@ -11,7 +11,7 @@ import Dashboard       from './pages/Dashboard';
 import Patients        from './pages/Patients';
 import Billing         from './pages/Billing';
 import BillingRequests from './pages/BillingRequests';
-import Pharmacy        from './pages/Pharmacy';
+import IMSApp          from './ims/App';
 import Lab             from './pages/Lab';
 import Inventory       from './pages/Inventory';
 import Staff           from './pages/Staff';
@@ -70,9 +70,11 @@ function App() {
               <PermRoute permKey="ipd"><IPD /></PermRoute>
             }/>
 
-            <Route path="pharmacy" element={
-              <PermRoute permKey="pharmacy"><Pharmacy /></PermRoute>
-            }/>
+           <Route path="pharmacy/*" element={
+              <PermRoute permKey="pharmacy">
+                <IMSApp />
+                </PermRoute>
+}/>
 
             <Route path="lab" element={
               <PermRoute permKey="lab"><Lab /></PermRoute>
