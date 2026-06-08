@@ -27,9 +27,6 @@ const NAV_SECTIONS = [
   section: 'MANAGEMENT',
   items: [
     { path: '/inventory', label: 'Inventory', icon: '📦', perm: 'inventory' },
-    { path: '/vendors', label: 'Vendors', icon: '🤝', perm: 'inventory' },  // ← NEW
-    { path: '/equipment', label: 'Equipment', icon: '🩺', perm: 'inventory' },  // ← NEW
-    { path: '/stock-transactions', label: 'Stock Mgmt', icon: '📊', perm: 'inventory' },  // ← NEW
     { path: '/staff', label: 'Staff Mgmt', icon: '👥', perm: 'staff' },
   ],
 },
