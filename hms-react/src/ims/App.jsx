@@ -11,6 +11,7 @@ import ProductsPage from "./pages/ProductsPage";
 import PurchasesPage from "./pages/PurchasesPage";
 import ReportsPage from "./pages/ReportsPage";
 import SalesPage from "./pages/SalesPage";
+import "./index.css";  
 import SuppliersPage from "./pages/SuppliersPage";
 import AllPatientsIMS from "./pages/AllPatientsIMS";
 import { Toaster } from "react-hot-toast";
