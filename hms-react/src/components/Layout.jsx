@@ -15,7 +15,7 @@ const NAV_SECTIONS = [
   {
     section: 'SERVICES',
     items: [
-      { path: '/ipd', label: 'IPD / Admitted', icon: '🏥', perm: 'ipd' },       // ← NEW
+      { path: '/ipd', label: 'IPD / Admitted', icon: '🏥', perm: 'ipd' },
       { path: '/billing', label: 'Billing', icon: '💳', perm: 'billing' },
       { path: '/billing-requests', label: 'Lab Bills', icon: '🧾', perm: 'billing' },
       { path: '/pharmacy', label: 'Pharmacy', icon: '💊', perm: 'pharmacy' },
@@ -44,6 +44,7 @@ const ROLE_META = {
 
 export default function Layout() {
   const { user, logout, hasPerm } = useAuth();
+
   const navigate = useNavigate();
   const [showConfirm, setShowConfirm] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -51,7 +52,7 @@ export default function Layout() {
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
-  const roleMeta = ROLE_META[user?.role] || {
+  const roleMeta = ROLE_META[user?.role?.toLowerCase()] || {
     label: user?.role, color: '#94a3b8', bg: 'rgba(148,163,184,0.15)',
   };
 
@@ -75,7 +76,7 @@ export default function Layout() {
       <aside
         style={{
           width: isMobile ? (sidebarOpen ? '260px' : '0px') : 235,
-          transition: 'all 0.3s ease',
+          transition: 'width 0.3s ease',
           background: '#0f2942',
           color: '#fff',
           display: 'flex',
@@ -83,8 +84,6 @@ export default function Layout() {
           flexShrink: 0,
           height: '100vh',
           overflowY: 'auto',
-          overflow: 'hidden',
-          transition: 'width 0.3s ease',
         }}
       >
         {/* Logo */}
@@ -136,13 +135,7 @@ export default function Layout() {
                   })}
                 >
                   <span style={{ fontSize: 15 }}>{icon}</span>
-                  <span
-                    onClick={() => {
-                      if (isMobile) setSidebarOpen(false);
-                    }}
-                  >
-                    {label}
-                  </span>
+                  <span>{label}</span>
                 </NavLink>
               ))}
             </div>
