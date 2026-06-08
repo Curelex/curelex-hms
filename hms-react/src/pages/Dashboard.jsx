@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recha
 import API from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import TokenDashboard from '../components/TokenDashboard';
+import inventoryService from '../services/inventoryService';
 
 const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -61,13 +62,48 @@ function AppointmentList({ appointments }) {
 export default function Dashboard() {
   const [stats,   setStats]   = useState(null);
   const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState({
+    lowStock: [],
+    outOfStock: [],
+    dueMaintenance: [],
+    overdueMaintenance: []
+  });
   const { user, hasPerm } = useAuth();
 
+  // Fetch dashboard stats
   useEffect(() => {
     API.get('/dashboard/stats')
       .then(r  => { setStats(r.data); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+
+  // Fetch inventory notifications (for users with inventory permission)
+  useEffect(() => {
+    if (hasPerm('inventory') || hasPerm('pharmacy')) {
+      const fetchNotifications = async () => {
+        try {
+          const [lowStock, outOfStock, dueMaintenance, overdueMaintenance] = await Promise.all([
+            inventoryService.getLowStock().catch(() => ({ data: [] })),
+            inventoryService.getOutOfStock().catch(() => ({ data: [] })),
+            inventoryService.getDueMaintenance().catch(() => ({ data: [] })),
+            inventoryService.getOverdueMaintenance().catch(() => ({ data: [] }))
+          ]);
+          setNotifications({
+            lowStock: lowStock.data || [],
+            outOfStock: outOfStock.data || [],
+            dueMaintenance: dueMaintenance.data || [],
+            overdueMaintenance: overdueMaintenance.data || []
+          });
+        } catch (err) {
+          console.error('Failed to fetch notifications:', err);
+        }
+      };
+      fetchNotifications();
+      // Refresh every 60 seconds
+      const interval = setInterval(fetchNotifications, 60000);
+      return () => clearInterval(interval);
+    }
+  }, [hasPerm]);
 
   if (loading) return <div className="spinner" />;
 
@@ -82,13 +118,17 @@ export default function Dashboard() {
     name: monthNames[m._id.month - 1],
     revenue: m.total,
   })) || [];
-  console.log(chartData);
 
   const showTokenQueue = hasPerm('patients');
+  const showInventoryAlerts = hasPerm('inventory') || hasPerm('pharmacy');
+
+  // Calculate alert counts
+  const totalAlerts = notifications.lowStock.length + notifications.outOfStock.length + 
+                      notifications.dueMaintenance.length + notifications.overdueMaintenance.length;
 
   return (
     <div>
-      {/* ── Page header ── */}
+      {/* ── Page header with notification badge ── */}
       <div className="page-header">
         <div>
           <h1 className="page-title">
@@ -96,9 +136,30 @@ export default function Dashboard() {
           </h1>
           <p className="text-muted text-small">{subtitle}</p>
         </div>
+        {showInventoryAlerts && totalAlerts > 0 && (
+          <div style={{
+            background: notifications.overdueMaintenance.length > 0 ? '#fee2e2' : '#fef3c7',
+            borderRadius: 30,
+            padding: '8px 18px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            border: `1px solid ${notifications.overdueMaintenance.length > 0 ? '#fca5a5' : '#fcd34d'}`
+          }}>
+            <span style={{ fontSize: 20 }}>🔔</span>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>
+                {totalAlerts} Alert{totalAlerts !== 1 ? 's' : ''}
+              </div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>
+                {notifications.lowStock.length} low stock · {notifications.overdueMaintenance.length} overdue maintenance
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* ── Stat cards — only patients + billing ── */}
+      {/* ── Stat cards ── */}
       <div className="stat-grid">
         {hasPerm('patients') && (
           <>
@@ -112,7 +173,115 @@ export default function Dashboard() {
             <StatCard label="Pending Bills" value={stats?.pendingBills || 0} icon="📋" color="#fee2e2" />
           </>
         )}
+        {showInventoryAlerts && (
+          <>
+            <StatCard label="Low Stock Items" value={notifications.lowStock.length} icon="⚠️" color="#fef3c7" />
+            <StatCard label="Out of Stock" value={notifications.outOfStock.length} icon="❌" color="#fee2e2" />
+          </>
+        )}
       </div>
+
+      {/* ── OVERDUE MAINTENANCE ALERT (CRITICAL) ── */}
+      {showInventoryAlerts && notifications.overdueMaintenance.length > 0 && (
+        <div className="card" style={{ 
+          marginBottom: 20, 
+          background: '#fef2f2', 
+          border: '2px solid #ef4444',
+          animation: 'pulse 2s infinite'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <span style={{ fontSize: 28 }}>🚨</span>
+            <div>
+              <h3 style={{ fontSize: 16, margin: 0, color: '#dc2626' }}>Critical: Overdue Maintenance!</h3>
+              <p style={{ fontSize: 13, margin: '4px 0 0', color: '#991b1b' }}>
+                {notifications.overdueMaintenance.length} equipment item(s) are past their maintenance due date
+              </p>
+            </div>
+          </div>
+          {notifications.overdueMaintenance.slice(0, 5).map(item => (
+            <div key={item._id} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '10px 0', borderBottom: '1px solid #fecaca'
+            }}>
+              <div>
+                <div style={{ fontWeight: 700 }}>{item.name}</div>
+                <div className="text-muted text-small">
+                  Serial: {item.equipmentDetails?.serialNumber || 'N/A'} · 
+                  Due: {item.equipmentDetails?.nextMaintenanceDate ? new Date(item.equipmentDetails.nextMaintenanceDate).toLocaleDateString() : 'N/A'}
+                </div>
+              </div>
+              <button 
+                className="btn btn-sm btn-danger"
+                onClick={() => window.location.href = '/equipment'}
+              >
+                View Equipment
+              </button>
+            </div>
+          ))}
+          {notifications.overdueMaintenance.length > 5 && (
+            <div style={{ marginTop: 8, textAlign: 'center' }}>
+              <span className="text-muted text-small">+{notifications.overdueMaintenance.length - 5} more</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── DUE MAINTENANCE ALERT ── */}
+      {showInventoryAlerts && notifications.dueMaintenance.length > 0 && notifications.overdueMaintenance.length === 0 && (
+        <div className="card" style={{ marginBottom: 20, background: '#fffbeb', border: '1px solid #fcd34d' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <span style={{ fontSize: 24 }}>⚠️</span>
+            <div>
+              <h3 style={{ fontSize: 15, margin: 0, color: '#b45309' }}>Maintenance Due Soon</h3>
+              <p style={{ fontSize: 12, margin: '2px 0 0', color: '#92400e' }}>
+                {notifications.dueMaintenance.length} equipment item(s) need maintenance within 7 days
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {notifications.dueMaintenance.slice(0, 5).map(item => (
+              <span key={item._id} className="badge badge-warning" style={{ cursor: 'pointer' }} onClick={() => window.location.href = '/equipment'}>
+                {item.name} - Due {item.equipmentDetails?.nextMaintenanceDate ? new Date(item.equipmentDetails.nextMaintenanceDate).toLocaleDateString() : 'N/A'}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── LOW STOCK ALERT ── */}
+      {showInventoryAlerts && (notifications.lowStock.length > 0 || notifications.outOfStock.length > 0) && (
+        <div className="card" style={{ marginBottom: 20, background: '#fefce8', border: '1px solid #fde047' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <span style={{ fontSize: 24 }}>📦</span>
+            <div>
+              <h3 style={{ fontSize: 15, margin: 0, color: '#854d0e' }}>Stock Alert</h3>
+              <p style={{ fontSize: 12, margin: '2px 0 0', color: '#713f12' }}>
+                {notifications.outOfStock.length} out of stock · {notifications.lowStock.length} low stock
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {notifications.outOfStock.slice(0, 3).map(item => (
+              <div key={item._id} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '6px 10px', background: '#fee2e2', borderRadius: 6
+              }}>
+                <span><strong>{item.name}</strong> <span className="badge badge-danger">Out of Stock</span></span>
+                <button className="btn btn-sm btn-primary" onClick={() => window.location.href = '/stock-transactions'}>Restock</button>
+              </div>
+            ))}
+            {notifications.lowStock.slice(0, 5).map(item => (
+              <div key={item._id} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '6px 10px', background: '#fef3c7', borderRadius: 6
+              }}>
+                <span><strong>{item.name}</strong> - Only {item.quantity} {item.unit} left (Reorder at {item.reorderLevel})</span>
+                <button className="btn btn-sm btn-outline" onClick={() => window.location.href = '/stock-transactions'}>Add Stock</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Charts ── */}
       <div style={{ display: 'grid', gridTemplateColumns: window.innerWidth <= 768 ? '1fr' : '1fr 1fr', gap: 20, marginTop: 20 }}>
@@ -132,56 +301,6 @@ export default function Dashboard() {
           </div>
         )}
       </div>
-
-      {/* ── Low stock alerts ── */}
-      {(hasPerm('pharmacy') || hasPerm('inventory')) && stats?.lowStockMeds?.length > 0 && (
-        <SectionCard title="Low Stock Alerts">
-          {stats.lowStockMeds.map((m, i) => (
-            <div key={i} style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '10px 0', borderBottom: '1px solid var(--border)',
-            }}>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{m.name}</div>
-                <div className="text-muted text-small">{m.category}</div>
-              </div>
-              <span style={{
-                padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-                background: m.quantity === 0 ? '#fee2e2' : '#fef3c7',
-                color:      m.quantity === 0 ? '#ef4444' : '#d97706',
-              }}>
-                {m.quantity === 0 ? 'Out of Stock' : `${m.quantity} left`}
-              </span>
-            </div>
-          ))}
-        </SectionCard>
-      )}
-
-      {/* ── Pending lab tests ── */}
-      {hasPerm('lab') && stats?.pendingLabList?.length > 0 && (
-        <SectionCard title="Pending Lab Tests">
-          {stats.pendingLabList.map((t, i) => (
-            <div key={i} style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '10px 0', borderBottom: '1px solid var(--border)',
-            }}>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{t.patient?.name}</div>
-                <div className="text-muted text-small">
-                  {t.testType} · Ordered by Dr. {t.doctor?.name}
-                </div>
-              </div>
-              <span style={{
-                padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-                background: t.priority === 'urgent' ? '#fee2e2' : '#fef3c7',
-                color:      t.priority === 'urgent' ? '#ef4444' : '#d97706',
-              }}>
-                {t.priority === 'urgent' ? '🚨 Urgent' : 'Pending'}
-              </span>
-            </div>
-          ))}
-        </SectionCard>
-      )}
 
       {/* ── Token queue ── */}
       {showTokenQueue && <TokenDashboard />}

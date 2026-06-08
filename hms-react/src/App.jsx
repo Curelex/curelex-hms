@@ -17,6 +17,9 @@ import Inventory from './pages/Inventory';
 import Staff from './pages/Staff';
 import TokenPanel from './pages/TokenPanel';
 import IPD from './pages/IPD';   // ← NEW
+import Vendors from './pages/Vendors';
+import Equipment from './pages/Equipment';
+import StockTransactions from './pages/StockTransactions';
 
 /* ── Auth guards ─────────────────────────────────────────────── */
 const PrivateRoute = ({ children }) => {
@@ -80,9 +83,11 @@ function App() {
               <PermRoute permKey="lab"><Lab /></PermRoute>
             } />
 
-            <Route path="inventory" element={
-              <PermRoute permKey="inventory"><Inventory /></PermRoute>
-            } />
+            
+<Route path="inventory" element={<PermRoute permKey="inventory"><Inventory /></PermRoute>} />
+<Route path="vendors" element={<PermRoute permKey="inventory"><Vendors /></PermRoute>} />  // ← NEW
+<Route path="equipment" element={<PermRoute permKey="inventory"><Equipment /></PermRoute>} />  // ← NEW
+<Route path="stock-transactions" element={<PermRoute permKey="inventory"><StockTransactions /></PermRoute>} />  // ← NEW
 
             <Route path="staff" element={
               <PermRoute permKey="staff"><Staff /></PermRoute>

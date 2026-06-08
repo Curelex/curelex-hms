@@ -174,3 +174,38 @@ tr:hover td { background: var(--surface2); }
   .form-row, .form-row-3 { grid-template-columns: 1fr; }
   .stat-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* Pulse animation for critical alerts */
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+/* Notification badge style */
+.notification-badge {
+  position: relative;
+  cursor: pointer;
+}
+
+.notification-badge .badge-count {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #ef4444;
+  color: white;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+}
