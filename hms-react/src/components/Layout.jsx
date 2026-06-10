@@ -21,6 +21,7 @@ const NAV_SECTIONS = [
       { path: '/pharmacy', label: 'Pharmacy', icon: '💊', perm: 'pharmacy' },
       { path: '/lab', label: 'Lab Tests', icon: '🧪', perm: 'lab' },
       { path: '/tokens', label: 'Token Queue', icon: '🎫', perm: 'patients' },
+      { path: '/emergency', label: 'Emergency Dept', icon: '🚨', perm: 'patients' },
     ],
   },
   {
