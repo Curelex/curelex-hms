@@ -35,8 +35,10 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     try {
       const { data } = await API.post('/auth/login', { email, password });
+      console.log("LOGIN RESPONSE:", data);
       localStorage.setItem('hms_token', data.token);
       // ✅ data.user contains clinicId — keep it in state
+      localStorage.setItem('user', JSON.stringify(data.user));
       setUser(data.user);
       return { success: true };
     } catch (err) {
@@ -53,6 +55,7 @@ export const AuthProvider = ({ children }) => {
       const { data } = await API.post('/auth/register', formData);
       localStorage.setItem('hms_token', data.token);
       // ✅ data.user contains clinicId — keep it in state
+      localStorage.setItem('user', JSON.stringify(data.user));
       setUser(data.user);
       return { success: true };
     } catch (err) {
@@ -65,6 +68,7 @@ export const AuthProvider = ({ children }) => {
   // ── Logout ───────────────────────────────────────────────────
   const logout = () => {
     localStorage.removeItem('hms_token');
+    localStorage.removeItem('user');
     setUser(null);
   };
 

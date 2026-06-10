@@ -161,7 +161,7 @@ function RoomSummary({ clinicId }) {
                     {config.roomType === 'ICU'           && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>🚨</span>}
                   </td>
                   <td style={tdStyle}>
-                    <span style={{ fontWeight: 600, color: '#0f4c81' }}>₹{config.dailyRate.toLocaleString()}</span>
+                    <span style={{ fontWeight: 600, color: '#0f4c81' }}>₹{(config.dailyRate || 0).toLocaleString()}</span>
                     <span style={{ fontSize: 10, color: '#94a3b8' }}>/day</span>
                   </td>
                   <td style={tdStyle}>

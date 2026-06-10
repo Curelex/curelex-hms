@@ -12,9 +12,11 @@ API.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('hms_token');
-      localStorage.removeItem('hms_user');
-      window.location.href = '/login';
+      console.log("401 ERROR:", err.config?.url);
+      console.log(err.response);
+      //localStorage.removeItem('hms_token');
+      //localStorage.removeItem('hms_user');
+      //window.location.href = '/login';
     }
     return Promise.reject(err);
   }
