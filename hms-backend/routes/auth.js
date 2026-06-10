@@ -91,7 +91,7 @@ router.post('/login', async (req, res) => {
     );
 
     const { password: _, ...userOut } = matchedUser.toObject();
-    console.log("USER OUT:", userOut);
+    
     res.json({ token, user: userOut });
   } catch (err) {
     console.error(err);
