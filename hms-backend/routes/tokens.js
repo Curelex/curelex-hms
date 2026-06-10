@@ -10,36 +10,52 @@ const Token   = require('../models/Token');
 
 /** Returns today's date as "YYYY-MM-DD" in local time (IST-safe). */
 function todayStr() {
-  const d = new Date();
+  const d   = new Date();
   const yr  = d.getFullYear();
   const mo  = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${yr}-${mo}-${day}`;
 }
 
+/**
+ * Resolves clinicId from (in priority order):
+ *  1. req.body.clinicId   — POST/PUT requests pass it in the body
+ *  2. req.query.clinicId  — GET/DELETE requests pass it as a query param
+ *  3. req.user.clinicId   — set by the auth middleware from the JWT
+ *  4. 'default'           — safe fallback
+ */
+function resolveClinicId(req) {
+  return (
+    req.body?.clinicId  ||
+    req.query?.clinicId ||
+    req.user?.clinicId  ||
+    'default'
+  );
+}
+
 // ── POST /api/tokens/generate ────────────────────────────────────────────────
-// Body: { doctorId, patientId?, patientName? }
-// Finds the highest token for this doctor today, increments by 1, creates new doc.
-// Each doctor's counter resets independently at midnight (new date string = new sequence).
+// Body: { clinicId, doctorId, patientId?, patientName? }
 router.post('/generate', auth, async (req, res) => {
   try {
+    const clinicId = resolveClinicId(req);
     const { doctorId, patientId, patientName } = req.body;
     if (!doctorId) return res.status(400).json({ message: 'doctorId is required' });
 
     const date = todayStr();
 
-    // Find highest token number for this doctor today
-    const last = await Token.findOne({ doctor: doctorId, date })
+    // Find highest token number for this doctor today — scoped to clinic
+    const last = await Token.findOne({ clinicId, doctor: doctorId, date })
       .sort({ tokenNumber: -1 })
       .select('tokenNumber');
 
     const tokenNumber = last ? last.tokenNumber + 1 : 1;
 
     const token = await Token.create({
+      clinicId,
       tokenNumber,
       date,
       doctor:      doctorId,
-      patient:     patientId  || undefined,
+      patient:     patientId   || undefined,
       patientName: patientName || 'Walk-in',
       generatedBy: req.user.id,
     });
@@ -59,12 +75,13 @@ router.post('/generate', auth, async (req, res) => {
 
 // ── GET /api/tokens/today ────────────────────────────────────────────────────
 // Returns all tokens for today, optionally filtered by doctorId.
-// Query: ?doctorId=xxx
+// Query: ?clinicId=xxx&doctorId=xxx
 router.get('/today', auth, async (req, res) => {
   try {
+    const clinicId = resolveClinicId(req);
     const { doctorId } = req.query;
-    const date = todayStr();
-    const query = { date };
+    const date  = todayStr();
+    const query = { clinicId, date };
     if (doctorId) query.doctor = doctorId;
 
     const tokens = await Token.find(query)
@@ -81,18 +98,21 @@ router.get('/today', auth, async (req, res) => {
 
 // ── GET /api/tokens/summary ──────────────────────────────────────────────────
 // Returns per-doctor token counts for today — used in dashboard widgets.
+// Query: ?clinicId=xxx
 router.get('/summary', auth, async (req, res) => {
   try {
-    const date = todayStr();
+    const clinicId = resolveClinicId(req);
+    const date     = todayStr();
+
     const summary = await Token.aggregate([
-      { $match: { date } },
+      { $match: { clinicId, date } },
       {
         $group: {
-          _id:     '$doctor',
-          total:   { $sum: 1 },
-          waiting: { $sum: { $cond: [{ $eq: ['$status', 'Waiting'] }, 1, 0] } },
-          called:  { $sum: { $cond: [{ $eq: ['$status', 'Called']  }, 1, 0] } },
-          done:    { $sum: { $cond: [{ $eq: ['$status', 'Done']    }, 1, 0] } },
+          _id:       '$doctor',
+          total:     { $sum: 1 },
+          waiting:   { $sum: { $cond: [{ $eq: ['$status', 'Waiting'] }, 1, 0] } },
+          called:    { $sum: { $cond: [{ $eq: ['$status', 'Called']  }, 1, 0] } },
+          done:      { $sum: { $cond: [{ $eq: ['$status', 'Done']    }, 1, 0] } },
           lastToken: { $max: '$tokenNumber' },
         },
       },
@@ -107,14 +127,14 @@ router.get('/summary', auth, async (req, res) => {
       { $unwind: '$doctor' },
       {
         $project: {
-          _id: 0,
+          _id:        0,
           doctorId:   '$_id',
           doctorName: '$doctor.name',
           department: '$doctor.department',
-          total:   1,
-          waiting: 1,
-          called:  1,
-          done:    1,
+          total:    1,
+          waiting:  1,
+          called:   1,
+          done:     1,
           lastToken: 1,
         },
       },
@@ -128,18 +148,24 @@ router.get('/summary', auth, async (req, res) => {
 });
 
 // ── PATCH /api/tokens/:id/status ────────────────────────────────────────────
-// Body: { status: 'Waiting' | 'Called' | 'Done' | 'Skipped' }
-// Doctors / staff use this to advance or skip a token.
+// Body: { clinicId, status: 'Waiting' | 'Called' | 'Done' | 'Skipped' }
 router.patch('/:id/status', auth, async (req, res) => {
   try {
+    const clinicId = resolveClinicId(req);
     const { status } = req.body;
     const valid = ['Waiting', 'Called', 'Done', 'Skipped'];
-    if (!valid.includes(status)) return res.status(400).json({ message: 'Invalid status' });
+    if (!valid.includes(status))
+      return res.status(400).json({ message: 'Invalid status' });
 
     const update = { status };
     if (status === 'Called') update.calledAt = new Date();
 
-    const token = await Token.findByIdAndUpdate(req.params.id, update, { new: true })
+    // Scope update to clinic so cross-clinic mutations are impossible
+    const token = await Token.findOneAndUpdate(
+      { _id: req.params.id, clinicId },
+      update,
+      { new: true }
+    )
       .populate('doctor',      'name department')
       .populate('patient',     'name patientId')
       .populate('generatedBy', 'name role');

@@ -1,15 +1,17 @@
 // hms-backend/routes/lab.js
-const router = require('express').Router();
+const router         = require('express').Router();
 const Lab            = require('../models/Lab');
 const BillingRequest = require('../models/BillingRequest');
 const Patient        = require('../models/Patient');
 const auth           = require('../middleware/auth');
 
-// ── GET all lab tests ─────────────────────────────────────────────────────────
+// ── GET all lab tests — scoped to clinic ──────────────────────────────────
 router.get('/', auth, async (req, res) => {
   try {
+    const clinicId = req.user.clinicId || 'default';
     const { status, patient, page = 1, limit = 20 } = req.query;
-    let query = {};
+
+    let query = { clinicId }; // ← always filter by clinic
     if (status)  query.status  = status;
     if (patient) query.patient = patient;
 
@@ -27,10 +29,11 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// ── GET single lab test ───────────────────────────────────────────────────────
+// ── GET single lab test — verify clinic ───────────────────────────────────
 router.get('/:id', auth, async (req, res) => {
   try {
-    const lab = await Lab.findById(req.params.id)
+    const clinicId = req.user.clinicId || 'default';
+    const lab = await Lab.findOne({ _id: req.params.id, clinicId })
       .populate('patient')
       .populate('orderedBy', 'name department');
     if (!lab) return res.status(404).json({ message: 'Lab test not found' });
@@ -40,31 +43,35 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
-// ── POST create lab order ─────────────────────────────────────────────────────
+// ── POST create lab order — stamp with clinicId ───────────────────────────
 router.post('/', auth, async (req, res) => {
   try {
-    const lab = await Lab.create({ ...req.body, orderedBy: req.user.id });
+    const clinicId = req.user.clinicId || 'default';
+    const lab = await Lab.create({ ...req.body, clinicId, orderedBy: req.user.id });
     res.status(201).json(lab);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// ── PUT update lab order ──────────────────────────────────────────────────────
-// KEY CHANGE: when status flips to 'Completed' a BillingRequest is auto-created
-// (idempotent – only one request per lab order ever gets created)
+// ── PUT update lab order ──────────────────────────────────────────────────
+// When status flips to 'Completed' a BillingRequest is auto-created (idempotent)
 router.put('/:id', auth, async (req, res) => {
   try {
+    const clinicId = req.user.clinicId || 'default';
     const data = { ...req.body };
     if (req.body.status === 'Completed')        data.reportGeneratedAt = new Date();
     if (req.body.status === 'Sample Collected') data.sampleCollectedAt = new Date();
 
-    const lab = await Lab.findByIdAndUpdate(req.params.id, data, { new: true })
-      .populate('patient', 'name patientId');
+    const lab = await Lab.findOneAndUpdate(
+      { _id: req.params.id, clinicId }, // ← scoped update
+      data,
+      { new: true }
+    ).populate('patient', 'name patientId');
 
     if (!lab) return res.status(404).json({ message: 'Lab not found' });
 
-    // ── Auto-create BillingRequest when lab is marked Completed ──────────────
+    // ── Auto-create BillingRequest when lab is marked Completed ─────────
     if (req.body.status === 'Completed') {
       const alreadyExists = await BillingRequest.findOne({ lab: lab._id });
 
@@ -75,6 +82,7 @@ router.put('/:id', auth, async (req, res) => {
         }));
 
         await BillingRequest.create({
+          clinicId,                              // ← stamp clinic
           lab:             lab._id,
           labId:           lab.labId,
           patient:         lab.patient._id,

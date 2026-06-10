@@ -3,11 +3,13 @@ const router  = require('express').Router();
 const Patient = require('../models/Patient');
 const auth    = require('../middleware/auth');
 
-// ── Get all patients ───────────────────────────────────────────────────────
+// ── Get all patients — scoped to clinic ────────────────────────────────────
 router.get('/', auth, async (req, res) => {
   try {
+    const clinicId = req.user.clinicId || 'default';
     const { search, status, page = 1, limit = 20 } = req.query;
-    let query = {};
+
+    let query = { clinicId }; // ← always filter by clinic
     if (search) query.$or = [
       { name:      { $regex: search, $options: 'i' } },
       { patientId: { $regex: search, $options: 'i' } },
@@ -28,10 +30,11 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// ── Get single patient ─────────────────────────────────────────────────────
+// ── Get single patient — verify it belongs to this clinic ─────────────────
 router.get('/:id', auth, async (req, res) => {
   try {
-    const patient = await Patient.findById(req.params.id)
+    const clinicId = req.user.clinicId || 'default';
+    const patient  = await Patient.findOne({ _id: req.params.id, clinicId })
       .populate('assignedDoctor', 'name department');
     if (!patient) return res.status(404).json({ message: 'Patient not found' });
     res.json(patient);
@@ -40,35 +43,34 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
-// ── Create patient ─────────────────────────────────────────────────────────
+// ── Create patient — stamp with clinicId ───────────────────────────────────
 router.post('/', auth, async (req, res) => {
   try {
-    // Strip empty assignedDoctor so Mongoose doesn't try to cast "" to ObjectId
-    const body = { ...req.body };
+    const clinicId = req.user.clinicId || 'default';
+    const body = { ...req.body, clinicId }; // ← inject clinic
     if (!body.assignedDoctor) delete body.assignedDoctor;
     if (!body.dob)            delete body.dob;
 
     const patient = new Patient(body);
-    await patient.save();                          // triggers pre-save hook
-
-    // Return populated doctor info so frontend token modal works
+    await patient.save();
     await patient.populate('assignedDoctor', 'name department');
     res.status(201).json(patient);
   } catch (err) {
-    console.error('Create patient error:', err);   // log full error server-side
+    console.error('Create patient error:', err);
     res.status(500).json({ message: err.message });
   }
 });
 
-// ── Update patient ─────────────────────────────────────────────────────────
+// ── Update patient — must belong to this clinic ────────────────────────────
 router.put('/:id', auth, async (req, res) => {
   try {
+    const clinicId = req.user.clinicId || 'default';
     const body = { ...req.body };
     if (!body.assignedDoctor) delete body.assignedDoctor;
     if (!body.dob)            delete body.dob;
 
-    const patient = await Patient.findByIdAndUpdate(
-      req.params.id,
+    const patient = await Patient.findOneAndUpdate(
+      { _id: req.params.id, clinicId }, // ← scoped update
       body,
       { new: true, runValidators: true }
     ).populate('assignedDoctor', 'name department');
@@ -81,10 +83,12 @@ router.put('/:id', auth, async (req, res) => {
   }
 });
 
-// ── Delete patient ─────────────────────────────────────────────────────────
+// ── Delete patient — must belong to this clinic ────────────────────────────
 router.delete('/:id', auth, async (req, res) => {
   try {
-    await Patient.findByIdAndDelete(req.params.id);
+    const clinicId = req.user.clinicId || 'default';
+    const result   = await Patient.findOneAndDelete({ _id: req.params.id, clinicId });
+    if (!result) return res.status(404).json({ message: 'Patient not found' });
     res.json({ message: 'Patient deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });

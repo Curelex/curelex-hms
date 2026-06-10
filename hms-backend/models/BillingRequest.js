@@ -3,14 +3,14 @@ const mongoose = require('mongoose');
 
 const BillingRequestSchema = new mongoose.Schema({
   requestId: { type: String, unique: true },
+  clinicId:  { type: String, required: true, index: true, default: 'default' }, // ← NEW
 
-  // ── Source — lab OR pharmacy (one is set, other is null) ─────────────────
-  lab:        { type: mongoose.Schema.Types.ObjectId, ref: 'Lab' },        // optional
+  // Source — lab OR pharmacy
+  lab:        { type: mongoose.Schema.Types.ObjectId, ref: 'Lab' },
   labId:      { type: String },
-  pharmacy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Pharmacy' },   // optional
+  pharmacy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Pharmacy' },
   pharmacyId: { type: String },
 
-  // 'Lab' or 'Pharmacy' — so billing dept can distinguish them
   type: { type: String, enum: ['Lab', 'Pharmacy'], default: 'Lab' },
 
   // Patient
@@ -18,18 +18,16 @@ const BillingRequestSchema = new mongoose.Schema({
   patientId:   { type: String },
   patientName: { type: String },
 
-  // Line items (tests for lab, medicines for pharmacy)
+  // Line items
   tests: [{
     testName: String,
     price:    Number,
   }],
   totalAmount: { type: Number, required: true },
 
-  // Who triggered the request (lab tech or pharmacist)
   requestedBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   requestedByName: { type: String },
 
-  // Workflow
   status: {
     type:    String,
     enum:    ['Pending', 'Approved', 'Rejected'],
@@ -40,16 +38,15 @@ const BillingRequestSchema = new mongoose.Schema({
   reviewedAt:   { type: Date },
   rejectReason: { type: String },
 
-  // Once approved, linked to the billing doc where items were added
   billing: { type: mongoose.Schema.Types.ObjectId, ref: 'Billing' },
 }, { timestamps: true });
 
-// Safe requestId generation
+// Safe requestId generation — scoped per clinic
 BillingRequestSchema.pre('save', async function (next) {
   if (!this.requestId) {
     try {
       const last = await mongoose.model('BillingRequest')
-        .findOne({ requestId: { $exists: true, $ne: null } })
+        .findOne({ clinicId: this.clinicId, requestId: { $exists: true, $ne: null } })
         .sort({ requestId: -1 })
         .select('requestId');
 

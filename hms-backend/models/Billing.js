@@ -2,7 +2,8 @@
 const mongoose = require('mongoose');
 
 const BillingSchema = new mongoose.Schema({
-  billId: { type: String, unique: true },
+  billId:   { type: String, unique: true },
+  clinicId: { type: String, required: true, index: true, default: 'default' }, // ← NEW
   patient:     { type: mongoose.Schema.Types.ObjectId, ref: 'Patient', required: true },
   appointment: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' },
 
@@ -57,8 +58,8 @@ const BillingSchema = new mongoose.Schema({
 
 BillingSchema.pre('save', async function (next) {
   if (!this.billId) {
-    const count = await mongoose.model('Billing').countDocuments();
-    this.billId = 'BILL' + String(count + 1).padStart(5, '0');
+    const count  = await mongoose.model('Billing').countDocuments({ clinicId: this.clinicId });
+    this.billId  = 'BILL' + String(count + 1).padStart(5, '0');
   }
   next();
 });

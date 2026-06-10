@@ -4,6 +4,24 @@ import API from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
+// ── Resolve clinicId from stored JWT / user object ───────────────────────────
+// Adjust the localStorage key / shape to match your app's auth storage.
+function getClinicId() {
+  try {
+    const raw = localStorage.getItem('user');        // change key if needed
+    if (!raw) return 'default';
+    const parsed = JSON.parse(raw);
+    return (
+      parsed.clinicId ||
+      parsed.clinic?._id ||
+      parsed.clinic ||
+      'default'
+    );
+  } catch {
+    return 'default';
+  }
+}
+
 const emptyForm = {
   name: '', age: '', gender: 'Male', phone: '', email: '',
   address: '', bloodGroup: '', dob: '', status: 'Active',
@@ -11,6 +29,8 @@ const emptyForm = {
 };
 
 export default function Patients() {
+  const clinicId = getClinicId();
+
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -36,14 +56,15 @@ export default function Patients() {
   const [tokenLoading,  setTokenLoading]  = useState(false);
 
   // ── Admission status cache (patientId → admissionStatus) ───────
-  // We fetch active admissions once to show "Admitted" badge on patients
   const [admittedIds, setAdmittedIds] = useState(new Set());
 
   // ── Fetch ──────────────────────────────────────────────────────
   const fetchPatients = async () => {
     setLoading(true);
     try {
-      const { data } = await API.get(`/patients?search=${search}&page=${page}&limit=15`);
+      const { data } = await API.get(
+        `/patients?search=${search}&page=${page}&limit=15&clinicId=${clinicId}`
+      );
       setPatients(data.patients);
       setTotal(data.total);
     } finally {
@@ -53,7 +74,7 @@ export default function Patients() {
 
   const fetchAdmissions = async () => {
     try {
-      const { data } = await API.get('/admissions/active');
+      const { data } = await API.get(`/admissions/active?clinicId=${clinicId}`);
       const ids = new Set(data.admissions.map(a => String(a.patient?._id || a.patient)));
       setAdmittedIds(ids);
     } catch {
@@ -61,18 +82,19 @@ export default function Patients() {
     }
   };
 
-  useEffect(() => { fetchPatients(); }, [search, page]);
-  useEffect(() => { fetchAdmissions(); }, []);
+  useEffect(() => { fetchPatients(); }, [search, page]);         // eslint-disable-line
+  useEffect(() => { fetchAdmissions(); }, []);                   // eslint-disable-line
   useEffect(() => {
-    API.get('/auth/users')
+    API.get(`/auth/users?clinicId=${clinicId}`)
       .then(r => setDoctors(r.data.filter(u => u.role === 'doctor')));
-  }, []);
+  }, [clinicId]);                                                // eslint-disable-line
 
   // ── Submit new / edit patient ──────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     const payload = {
       ...form,
+      clinicId,
       allergies: form.allergies ? form.allergies.split(',').map(s => s.trim()) : [],
     };
 
@@ -102,6 +124,7 @@ export default function Patients() {
         doctorId:    tokenDoctorId,
         patientId:   newPatient._id,
         patientName: newPatient.name,
+        clinicId,
       });
       setTokenReceipt(data);
       setTokenModal(false);
@@ -118,15 +141,13 @@ export default function Patients() {
     setTokenDoctorId('');
   };
 
-  // ── Quick admit — navigates to IPD page with patient pre-selected
-  // The IPD page handles the actual admit modal
+  // ── Quick admit ────────────────────────────────────────────────
   const handleQuickAdmit = (p) => {
-    // Store patient in sessionStorage so IPD page can pre-fill
     sessionStorage.setItem('ipd_admit_patient', JSON.stringify({
-      _id:   p._id,
-      name:  p.name,
-      patientId: p.patientId,
-      phone: p.phone,
+      _id:            p._id,
+      name:           p.name,
+      patientId:      p.patientId,
+      phone:          p.phone,
       assignedDoctor: p.assignedDoctor?._id || p.assignedDoctor || '',
     }));
     navigate('/ipd');
@@ -145,7 +166,7 @@ export default function Patients() {
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this patient?')) return;
-    await API.delete(`/patients/${id}`);
+    await API.delete(`/patients/${id}?clinicId=${clinicId}`);
     fetchPatients();
   };
 
@@ -214,7 +235,6 @@ export default function Patients() {
                       <td><span className="badge badge-info">{p.bloodGroup || '—'}</span></td>
                       <td>{p.assignedDoctor?.name || '—'}</td>
                       <td>
-                        {/* Show "Admitted" badge if currently admitted, otherwise normal status */}
                         {isAdmitted ? (
                           <span style={{
                             fontSize: 11, padding: '2px 10px', borderRadius: 20, fontWeight: 700,
@@ -231,7 +251,6 @@ export default function Patients() {
                           <button className="btn btn-sm btn-outline"
                             onClick={() => handleEdit(p)}>Edit</button>
 
-                          {/* ── ADMIT BUTTON — Receptionist only, not already admitted ── */}
                           {canAdmit && !isAdmitted && (
                             <button
                               className="btn btn-sm"
@@ -247,7 +266,6 @@ export default function Patients() {
                             </button>
                           )}
 
-                          {/* If already admitted — go to IPD button */}
                           {canAdmit && isAdmitted && (
                             <button
                               className="btn btn-sm"
@@ -419,7 +437,7 @@ export default function Patients() {
               </div>
               <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
                 📅 Token date: <strong>{new Date().toLocaleDateString('en-IN', {
-                  day: '2-digit', month: 'short', year: 'numeric'
+                  day: '2-digit', month: 'short', year: 'numeric',
                 })}</strong> — Resets at 12:00 AM
               </div>
             </div>
@@ -460,7 +478,7 @@ export default function Patients() {
                 </div>
                 <div style={{ marginTop: 6 }}>
                   📅 {new Date().toLocaleDateString('en-IN', {
-                    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
+                    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
                   })}
                 </div>
               </div>
@@ -506,7 +524,6 @@ export default function Patients() {
                   </div>
                 ))}
               </div>
-              {/* Quick navigate to IPD for admitted patients */}
               {admittedIds.has(String(viewPatient._id)) && canAdmit && (
                 <div style={{ marginTop: 16 }}>
                   <button

@@ -12,15 +12,14 @@ const ROOM_RATES = {
   'ICU':           4000,
 };
 
-// ────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 //  GET /billing/check-patient/:patientId
-//  Returns the existing bill for a patient if one exists (any status)
-//  Frontend uses this when a patient is selected in Create Bill.
-// ────────────────────────────────────────────────────────────────
+//  Returns the existing bill for this patient within the same clinic
+// ────────────────────────────────────────────────────────────────────────────
 router.get('/check-patient/:patientId', auth, async (req, res) => {
   try {
-    // Most recent bill for this patient regardless of status
-    const existing = await Billing.findOne({ patient: req.params.patientId })
+    const clinicId = req.user.clinicId || 'default';
+    const existing = await Billing.findOne({ patient: req.params.patientId, clinicId })
       .populate('patient', 'name patientId phone age gender bloodGroup')
       .sort({ createdAt: -1 });
 
@@ -31,19 +30,20 @@ router.get('/check-patient/:patientId', auth, async (req, res) => {
   }
 });
 
-// ────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 //  GET /billing/patient-items/:patientId
-//  Auto-fetch medicines + lab tests for pre-populating bill items
-// ────────────────────────────────────────────────────────────────
+//  Auto-fetch medicines + lab tests scoped to clinic
+// ────────────────────────────────────────────────────────────────────────────
 router.get('/patient-items/:patientId', auth, async (req, res) => {
   try {
+    const clinicId = req.user.clinicId || 'default';
     const { patientId } = req.params;
 
-    const prescriptions = await Pharmacy.find({ patient: patientId })
+    const prescriptions = await Pharmacy.find({ patient: patientId, clinicId })
       .populate('dispensedBy', 'name')
       .sort({ createdAt: -1 });
 
-    const labTests = await Lab.find({ patient: patientId })
+    const labTests = await Lab.find({ patient: patientId, clinicId })
       .populate('doctor', 'name')
       .sort({ createdAt: -1 });
 
@@ -81,13 +81,15 @@ router.get('/patient-items/:patientId', auth, async (req, res) => {
   }
 });
 
-// ────────────────────────────────────────────────────────────────
-//  GET /billing  — list all bills
-// ────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+//  GET /billing  — list bills for this clinic only
+// ────────────────────────────────────────────────────────────────────────────
 router.get('/', auth, async (req, res) => {
   try {
+    const clinicId = req.user.clinicId || 'default';
     const { status, patient, page = 1, limit = 15 } = req.query;
-    const query = {};
+
+    const query = { clinicId }; // ← scoped
     if (status)  query.paymentStatus = status;
     if (patient) query.patient = patient;
 
@@ -105,12 +107,13 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// ────────────────────────────────────────────────────────────────
-//  GET /billing/:id
-// ────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+//  GET /billing/:id — verify clinic ownership
+// ────────────────────────────────────────────────────────────────────────────
 router.get('/:id', auth, async (req, res) => {
   try {
-    const bill = await Billing.findById(req.params.id)
+    const clinicId = req.user.clinicId || 'default';
+    const bill = await Billing.findOne({ _id: req.params.id, clinicId })
       .populate('patient')
       .populate('appointment')
       .populate('generatedBy', 'name');
@@ -121,23 +124,21 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
-// ────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 //  POST /billing  — create new bill
-//  GUARD: if a bill already exists for this patient → reject with
-//  { duplicate: true, bill: existingBill } so frontend can redirect
-//  to edit mode instead.
-// ────────────────────────────────────────────────────────────────
+//  Duplicate guard is now clinic-scoped too
+// ────────────────────────────────────────────────────────────────────────────
 router.post('/', auth, async (req, res) => {
   try {
-    const body = { ...req.body, generatedBy: req.user.id };
+    const clinicId = req.user.clinicId || 'default';
+    const body = { ...req.body, clinicId, generatedBy: req.user.id };
 
-    // ── Duplicate guard ───────────────────────────────────────
-    const existing = await Billing.findOne({ patient: body.patient })
+    // ── Duplicate guard (scoped to clinic) ──────────────────────────────
+    const existing = await Billing.findOne({ patient: body.patient, clinicId })
       .populate('patient', 'name patientId phone age gender bloodGroup')
       .sort({ createdAt: -1 });
 
     if (existing) {
-      // Tell frontend to switch to edit mode with the existing bill
       return res.status(409).json({
         duplicate: true,
         message:   `A bill already exists for this patient (${existing.billId}).`,
@@ -145,7 +146,6 @@ router.post('/', auth, async (req, res) => {
       });
     }
 
-    // ── Normal create ─────────────────────────────────────────
     if (body.roomType) body.roomRatePerDay = ROOM_RATES[body.roomType] || 800;
     if (body.daysAdmitted && body.roomRatePerDay) {
       body.roomRent = Number(body.daysAdmitted) * Number(body.roomRatePerDay);
@@ -160,11 +160,12 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
-// ────────────────────────────────────────────────────────────────
-//  PUT /billing/:id  — update / append items to existing bill
-// ────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+//  PUT /billing/:id  — update bill (scoped to clinic)
+// ────────────────────────────────────────────────────────────────────────────
 router.put('/:id', auth, async (req, res) => {
   try {
+    const clinicId = req.user.clinicId || 'default';
     const body = { ...req.body };
 
     if (body.roomType) body.roomRatePerDay = ROOM_RATES[body.roomType] || 800;
@@ -172,8 +173,13 @@ router.put('/:id', auth, async (req, res) => {
       body.roomRent = Number(body.daysAdmitted) * Number(body.roomRatePerDay);
     }
 
-    const bill = await Billing.findByIdAndUpdate(req.params.id, body, { new: true })
-      .populate('patient', 'name patientId phone age gender bloodGroup');
+    const bill = await Billing.findOneAndUpdate(
+      { _id: req.params.id, clinicId }, // ← scoped
+      body,
+      { new: true }
+    ).populate('patient', 'name patientId phone age gender bloodGroup');
+
+    if (!bill) return res.status(404).json({ message: 'Bill not found' });
     res.json(bill);
   } catch (err) {
     res.status(500).json({ message: err.message });

@@ -1,14 +1,15 @@
+// hms-react/src/pages/Register.jsx
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import API from '../utils/api';
 
 const ROLES = [
-  { value: 'admin', label: 'Admin', icon: '🛡️', desc: 'Full system access' },
-  { value: 'doctor', label: 'Doctor', icon: '👨‍⚕️', desc: 'Patient care & records' },
-  { value: 'nurse', label: 'Nurse', icon: '👩‍⚕️', desc: 'Patient monitoring' },
-  { value: 'receptionist', label: 'Receptionist', icon: '🗂️', desc: 'Appointments & billing' },
-  { value: 'pharmacist', label: 'Pharmacist', icon: '💊', desc: 'Pharmacy & inventory' },
-  { value: 'lab_technician', label: 'Lab Technician', icon: '🧪', desc: 'Lab tests & reports' },
+  { value: 'admin',          label: 'Admin',          icon: '🛡️',  desc: 'Full system access' },
+  { value: 'doctor',         label: 'Doctor',         icon: '👨‍⚕️', desc: 'Patient care & records' },
+  { value: 'nurse',          label: 'Nurse',          icon: '👩‍⚕️', desc: 'Patient monitoring' },
+  { value: 'receptionist',   label: 'Receptionist',   icon: '🗂️',  desc: 'Appointments & billing' },
+  { value: 'pharmacist',     label: 'Pharmacist',     icon: '💊',  desc: 'Pharmacy & inventory' },
+  { value: 'lab_technician', label: 'Lab Technician', icon: '🧪',  desc: 'Lab tests & reports' },
 ];
 
 const DEPARTMENTS = [
@@ -18,10 +19,18 @@ const DEPARTMENTS = [
 ];
 
 export default function Register() {
-  const [step, setStep] = useState(1); // 1 = role select, 2 = form
+  const [step,         setStep]         = useState(1);
   const [selectedRole, setSelectedRole] = useState('');
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '', department: '', phone: '' });
-  const [error, setError] = useState('');
+  const [form,         setForm]         = useState({
+    clinicName:      '',   // ✅ NEW — required to create clinic on register
+    name:            '',
+    email:           '',
+    password:        '',
+    confirmPassword: '',
+    department:      '',
+    phone:           '',
+  });
+  const [error,   setError]   = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -37,16 +46,25 @@ export default function Register() {
     setError('');
     if (form.password !== form.confirmPassword) return setError('Passwords do not match');
     if (form.password.length < 6) return setError('Password must be at least 6 characters');
+
+    // ✅ Only require clinicName when registering as admin
+    //    (admins create a new clinic; other roles are added by an existing admin)
+    if (selectedRole === 'admin' && !form.clinicName.trim()) {
+      return setError('Clinic / Hospital name is required for admin registration');
+    }
+
     setLoading(true);
     try {
       const { data } = await API.post('/auth/register', {
-        name: form.name,
-        email: form.email,
-        password: form.password,
-        role: selectedRole,
-        department: form.department,
-        phone: form.phone,
+        clinicName:  form.clinicName,   // ✅ sent to backend
+        name:        form.name,
+        email:       form.email,
+        password:    form.password,
+        role:        selectedRole,
+        department:  form.department,
+        phone:       form.phone,
       });
+
       localStorage.setItem('hms_token', data.token);
       localStorage.setItem('hms_user', JSON.stringify(data.user));
       navigate('/');
@@ -60,32 +78,40 @@ export default function Register() {
   return (
     <div className="login-page">
       <div className="login-card" style={{ maxWidth: step === 1 ? 560 : 460, width: '100%' }}>
-        {/* Header */}
+
+        {/* ── Header ───────────────────────────────────────────────── */}
         <div className="login-logo">
           <div style={{ fontSize: 36, marginBottom: 6 }}>🏥</div>
           <h1>MediCare HMS</h1>
           <p>{step === 1 ? 'Select your role to get started' : 'Create your account'}</p>
         </div>
 
-        {/* Step indicator */}
+        {/* ── Step indicator ───────────────────────────────────────── */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 24 }}>
           {[1, 2].map((s) => (
             <React.Fragment key={s}>
               <div style={{
-                width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center',
-                justifyContent: 'center', fontSize: 13, fontWeight: 700,
+                width: 28, height: 28, borderRadius: '50%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 13, fontWeight: 700,
                 background: step >= s ? '#0f4c81' : '#e2e8f0',
-                color: step >= s ? '#fff' : '#94a3b8',
-                transition: 'all 0.3s'
+                color:      step >= s ? '#fff'    : '#94a3b8',
+                transition: 'all 0.3s',
               }}>{s}</div>
-              {s < 2 && <div style={{ width: 40, height: 2, background: step > s ? '#0f4c81' : '#e2e8f0', transition: 'all 0.3s' }} />}
+              {s < 2 && (
+                <div style={{
+                  width: 40, height: 2,
+                  background: step > s ? '#0f4c81' : '#e2e8f0',
+                  transition: 'all 0.3s',
+                }} />
+              )}
             </React.Fragment>
           ))}
         </div>
 
         {error && <div className="error-msg">{error}</div>}
 
-        {/* Step 1 — Role Selection */}
+        {/* ── STEP 1: Role Selection ────────────────────────────────── */}
         {step === 1 && (
           <div>
             <p style={{ textAlign: 'center', marginBottom: 16, fontSize: 13, color: '#64748b' }}>
@@ -118,13 +144,14 @@ export default function Register() {
           </div>
         )}
 
-        {/* Step 2 — Registration Form */}
+        {/* ── STEP 2: Registration Form ─────────────────────────────── */}
         {step === 2 && (
           <form onSubmit={handleSubmit}>
+
             {/* Selected role badge */}
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-              background: '#f0f6ff', borderRadius: 8, marginBottom: 18, border: '1px solid #bfdbfe'
+              background: '#f0f6ff', borderRadius: 8, marginBottom: 18, border: '1px solid #bfdbfe',
             }}>
               <span style={{ fontSize: 20 }}>{ROLES.find(r => r.value === selectedRole)?.icon}</span>
               <div>
@@ -140,6 +167,25 @@ export default function Register() {
                 </button>
               </div>
             </div>
+
+            {/* ✅ Clinic name — only shown for admin, since only admins create a new clinic */}
+            {selectedRole === 'admin' && (
+              <div className="form-group">
+                <label className="form-label">Clinic / Hospital Name *</label>
+                <input
+                  className="form-control"
+                  name="clinicName"
+                  type="text"
+                  placeholder="e.g. City Health Clinic"
+                  value={form.clinicName}
+                  onChange={handleChange}
+                  required
+                />
+                <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
+                  This creates a new isolated clinic workspace.
+                </div>
+              </div>
+            )}
 
             <div className="form-group">
               <label className="form-label">Full Name *</label>

@@ -12,7 +12,7 @@ const emptyForm = {
   totalAmount: 0, priority: 'Normal', status: 'Ordered', remarks: '',
 };
 
-// ── Recalculate total from tests array ───────────────────────────
+// ── Recalculate total from tests array ────────────────────────────────────────
 const calcTotal = (tests) =>
   tests.reduce((s, t) => s + (parseFloat(t.price) || 0), 0);
 
@@ -26,10 +26,11 @@ export default function Lab() {
   const [patients,     setPatients]     = useState([]);
   const [filterStatus, setFilterStatus] = useState('');
   const [page,         setPage]         = useState(1);
-  const [submitting,   setSubmitting]   = useState(false); // ← prevents double-click
-  const [error,        setError]        = useState('');    // ← surface errors in UI
+  const [submitting,   setSubmitting]   = useState(false);
+  const [error,        setError]        = useState('');
 
-  // ── Fetch lab list ────────────────────────────────────────────
+  // ── Fetch lab list ─────────────────────────────────────────────────────────
+  // Backend automatically scopes by clinicId from JWT — no extra param needed
   const fetchLabs = async () => {
     setLoading(true);
     try {
@@ -47,13 +48,14 @@ export default function Lab() {
 
   useEffect(() => { fetchLabs(); }, [page, filterStatus]);
 
+  // ── Fetch patients — backend scopes by clinicId from JWT automatically ─────
   useEffect(() => {
     API.get('/patients?limit=200')
       .then(r => setPatients(r.data.patients || []))
       .catch(() => {});
   }, []);
 
-  // ── Update a single test field ────────────────────────────────
+  // ── Update a single test field ─────────────────────────────────────────────
   const updateTest = (idx, field, val) => {
     setForm(f => {
       const tests = [...f.tests];
@@ -62,7 +64,7 @@ export default function Lab() {
     });
   };
 
-  // ── Add a blank test row ──────────────────────────────────────
+  // ── Add a blank test row ───────────────────────────────────────────────────
   const addTest = () => {
     setForm(f => ({
       ...f,
@@ -70,17 +72,16 @@ export default function Lab() {
     }));
   };
 
-  // ── Remove a test row + recalculate total ─────────────────────
+  // ── Remove a test row + recalculate total ──────────────────────────────────
   const removeTest = (idx) => {
     setForm(f => {
-      const tests = f.tests.filter((_, i) => i !== idx);
-      // Always keep at least one row so the form never submits empty
+      const tests     = f.tests.filter((_, i) => i !== idx);
       const safeTests = tests.length > 0 ? tests : [{ ...emptyTest }];
       return { ...f, tests: safeTests, totalAmount: calcTotal(safeTests) };
     });
   };
 
-  // ── Open modal for creating ───────────────────────────────────
+  // ── Open modal for creating ────────────────────────────────────────────────
   const openCreate = () => {
     setForm(emptyForm);
     setEditId(null);
@@ -88,13 +89,12 @@ export default function Lab() {
     setModal(true);
   };
 
-  // ── Open modal for editing ────────────────────────────────────
+  // ── Open modal for editing ─────────────────────────────────────────────────
   const openEdit = (lab) => {
-    // Deep-copy tests so edits don't mutate the list row
     const tests = (lab.tests || []).map(t => ({
       ...emptyTest,
       ...t,
-      price: t.price ?? '',   // normalise so input isn't stuck on 0
+      price: t.price ?? '',
     }));
     setForm({
       ...emptyForm,
@@ -108,7 +108,7 @@ export default function Lab() {
     setModal(true);
   };
 
-  // ── Close modal ───────────────────────────────────────────────
+  // ── Close modal ────────────────────────────────────────────────────────────
   const closeModal = () => {
     setModal(false);
     setForm(emptyForm);
@@ -116,14 +116,13 @@ export default function Lab() {
     setError('');
   };
 
-  // ── Submit (create or update) ─────────────────────────────────
+  // ── Submit (create or update) ──────────────────────────────────────────────
+  // clinicId is injected by the backend from req.user.clinicId — not sent from frontend
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
-    // Client-side guard: every test must have a name
-    const missingName = form.tests.some(t => !t.testName.trim());
-    if (missingName) {
+    if (form.tests.some(t => !t.testName.trim())) {
       setError('Please enter a test name for every test row.');
       return;
     }
@@ -132,7 +131,6 @@ export default function Lab() {
       return;
     }
 
-    // Coerce prices to numbers before sending
     const payload = {
       ...form,
       tests: form.tests.map(t => ({
@@ -157,7 +155,7 @@ export default function Lab() {
     }
   };
 
-  // ── Quick status change from table row ────────────────────────
+  // ── Quick status change from table row ─────────────────────────────────────
   const handleStatusChange = async (id, status) => {
     try {
       await API.put(`/lab/${id}`, { status });
@@ -167,14 +165,14 @@ export default function Lab() {
     }
   };
 
-  // ── Badges ────────────────────────────────────────────────────
+  // ── Badges ─────────────────────────────────────────────────────────────────
   const statusBadge = (s) => {
     const map = {
-      Ordered:           'badge-info',
-      'Sample Collected':'badge-warning',
-      Processing:        'badge-purple',
-      Completed:         'badge-success',
-      Cancelled:         'badge-danger',
+      Ordered:            'badge-info',
+      'Sample Collected': 'badge-warning',
+      Processing:         'badge-purple',
+      Completed:          'badge-success',
+      Cancelled:          'badge-danger',
     };
     return <span className={`badge ${map[s] || 'badge-gray'}`}>{s}</span>;
   };
@@ -186,7 +184,7 @@ export default function Lab() {
 
   const pages = Math.ceil(total / 15);
 
-  // ─────────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────────────────────
   return (
     <div>
       {/* Page header */}
@@ -228,7 +226,9 @@ export default function Lab() {
                   <tr><td colSpan="7" className="empty-state">No lab tests found</td></tr>
                 ) : labs.map(lab => (
                   <tr key={lab._id}>
-                    <td><strong style={{ color: 'var(--primary)' }}>{lab.labId}</strong></td>
+                    <td>
+                      <strong style={{ color: 'var(--primary)' }}>{lab.labId}</strong>
+                    </td>
                     <td>
                       <strong>{lab.patient?.name}</strong><br />
                       <span className="text-muted text-small">{lab.patient?.patientId}</span>
@@ -245,20 +245,26 @@ export default function Lab() {
                     <td>
                       <div className="flex gap-2">
                         {lab.status === 'Ordered' && (
-                          <button className="btn btn-sm btn-warning"
-                            onClick={() => handleStatusChange(lab._id, 'Sample Collected')}>
+                          <button
+                            className="btn btn-sm btn-warning"
+                            onClick={() => handleStatusChange(lab._id, 'Sample Collected')}
+                          >
                             Collect
                           </button>
                         )}
                         {lab.status === 'Sample Collected' && (
-                          <button className="btn btn-sm btn-ghost"
-                            onClick={() => handleStatusChange(lab._id, 'Processing')}>
+                          <button
+                            className="btn btn-sm btn-ghost"
+                            onClick={() => handleStatusChange(lab._id, 'Processing')}
+                          >
                             Process
                           </button>
                         )}
                         {lab.status === 'Processing' && (
-                          <button className="btn btn-sm btn-success"
-                            onClick={() => handleStatusChange(lab._id, 'Completed')}>
+                          <button
+                            className="btn btn-sm btn-success"
+                            onClick={() => handleStatusChange(lab._id, 'Completed')}
+                          >
                             Complete
                           </button>
                         )}
@@ -276,18 +282,30 @@ export default function Lab() {
 
         {pages > 1 && (
           <div className="pagination">
-            <button className="page-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>‹</button>
+            <button
+              className="page-btn"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >‹</button>
             {Array.from({ length: pages }, (_, i) => (
-              <button key={i + 1} className={`page-btn ${page === i + 1 ? 'active' : ''}`} onClick={() => setPage(i + 1)}>
+              <button
+                key={i + 1}
+                className={`page-btn ${page === i + 1 ? 'active' : ''}`}
+                onClick={() => setPage(i + 1)}
+              >
                 {i + 1}
               </button>
             ))}
-            <button className="page-btn" onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page === pages}>›</button>
+            <button
+              className="page-btn"
+              onClick={() => setPage(p => Math.min(pages, p + 1))}
+              disabled={page === pages}
+            >›</button>
           </div>
         )}
       </div>
 
-      {/* ── Order / Edit Modal ─────────────────────────────────── */}
+      {/* ── Order / Edit Modal ──────────────────────────────────────────────── */}
       {modal && (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
@@ -314,6 +332,11 @@ export default function Lab() {
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Patient *</label>
+                    {/*
+                      Patients list is already clinic-scoped:
+                      backend GET /patients filters by req.user.clinicId from JWT.
+                      No extra query param needed here.
+                    */}
                     <select
                       className="form-control"
                       value={form.patient}
@@ -322,7 +345,9 @@ export default function Lab() {
                     >
                       <option value="">Select Patient</option>
                       {patients.map(p => (
-                        <option key={p._id} value={p._id}>{p.name} — {p.patientId}</option>
+                        <option key={p._id} value={p._id}>
+                          {p.name} — {p.patientId}
+                        </option>
                       ))}
                     </select>
                   </div>

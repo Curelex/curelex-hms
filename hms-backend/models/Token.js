@@ -2,6 +2,7 @@
 const mongoose = require('mongoose');
 
 const TokenSchema = new mongoose.Schema({
+  clinicId:     { type: String, required: true, index: true, default: 'default' }, // ← NEW
   tokenNumber:  { type: Number, required: true },
   date:         { type: String, required: true },   // "YYYY-MM-DD" — resets daily
   doctor:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -12,7 +13,8 @@ const TokenSchema = new mongoose.Schema({
   calledAt:     { type: Date },
 }, { timestamps: true });
 
-// Unique token per doctor per date — e.g. Doctor A can only have one Token #3 on a given day
-TokenSchema.index({ doctor: 1, date: 1, tokenNumber: 1 }, { unique: true });
+// Unique token per clinic + doctor + date
+// e.g. Doctor A at Clinic X can only have one Token #3 on a given day
+TokenSchema.index({ clinicId: 1, doctor: 1, date: 1, tokenNumber: 1 }, { unique: true });
 
 module.exports = mongoose.model('Token', TokenSchema);

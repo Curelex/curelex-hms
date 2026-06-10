@@ -6,6 +6,24 @@ import React, { useEffect, useState, useCallback } from 'react';
 import API from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 
+// ── Resolve clinicId from stored JWT / user object ───────────────────────────
+// Adjust the localStorage key / shape to match your app's auth storage.
+function getClinicId() {
+  try {
+    const raw = localStorage.getItem('user');        // change key if needed
+    if (!raw) return 'default';
+    const parsed = JSON.parse(raw);
+    return (
+      parsed.clinicId ||
+      parsed.clinic?._id ||
+      parsed.clinic ||
+      'default'
+    );
+  } catch {
+    return 'default';
+  }
+}
+
 // ── small helpers ────────────────────────────────────────────────
 function daysSince(date) {
   const d = Math.round((Date.now() - new Date(date)) / 86400000);
@@ -25,49 +43,51 @@ function fmtTime(date) {
 }
 
 const statusColor = { Admitted: '#d1fae5', Discharged: '#f1f5f9', Transferred: '#fef3c7' };
-const statusText = { Admitted: '#065f46', Discharged: '#475569', Transferred: '#92400e' };
+const statusText  = { Admitted: '#065f46', Discharged: '#475569', Transferred: '#92400e' };
 
 // ────────────────────────────────────────────────────────────────
 export default function IPD() {
+  const clinicId = getClinicId();
+
   const { user } = useAuth();
   const isReceptionist = ['receptionist', 'admin'].includes(user?.role);
-  const isDoctor = user?.role === 'doctor';
-  const isNurse = user?.role === 'nurse';
-  const canAddNote = isDoctor || isNurse || user?.role === 'admin';
-  const isMobile = window.innerWidth <= 768;
+  const isDoctor       = user?.role === 'doctor';
+  const isNurse        = user?.role === 'nurse';
+  const canAddNote     = isDoctor || isNurse || user?.role === 'admin';
+  const isMobile       = window.innerWidth <= 768;
 
-  const [admissions, setAdmissions] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [admissions,   setAdmissions]   = useState([]);
+  const [total,        setTotal]        = useState(0);
+  const [loading,      setLoading]      = useState(true);
   const [filterStatus, setFilterStatus] = useState('Admitted');
-  const [page, setPage] = useState(1);
+  const [page,         setPage]         = useState(1);
 
   // Room configs (dynamic)
-  const [roomConfigs, setRoomConfigs] = useState([]);
+  const [roomConfigs,        setRoomConfigs]        = useState([]);
   const [roomConfigsLoading, setRoomConfigsLoading] = useState(true);
 
   // detail panel
-  const [selected, setSelected] = useState(null);
+  const [selected,      setSelected]      = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
   // admit modal
-  const [admitModal, setAdmitModal] = useState(false);
-  const [admitForm, setAdmitForm] = useState({ roomType: 'General Ward', roomNumber: '', notes: '' });
-  const [patientSearch, setPatientSearch] = useState('');
+  const [admitModal,     setAdmitModal]     = useState(false);
+  const [admitForm,      setAdmitForm]      = useState({ roomType: 'General Ward', roomNumber: '', notes: '' });
+  const [patientSearch,  setPatientSearch]  = useState('');
   const [patientResults, setPatientResults] = useState([]);
-  const [chosenPatient, setChosenPatient] = useState(null);
-  const [doctors, setDoctors] = useState([]);
-  const [chosenDoctor, setChosenDoctor] = useState('');
-  const [admitSaving, setAdmitSaving] = useState(false);
+  const [chosenPatient,  setChosenPatient]  = useState(null);
+  const [doctors,        setDoctors]        = useState([]);
+  const [chosenDoctor,   setChosenDoctor]   = useState('');
+  const [admitSaving,    setAdmitSaving]    = useState(false);
 
   // add medicine modal
-  const [medModal, setMedModal] = useState(false);
-  const [medForm, setMedForm] = useState({ medicineName: '', dosage: '', quantity: 1, unitPrice: 0, notes: '' });
+  const [medModal,  setMedModal]  = useState(false);
+  const [medForm,   setMedForm]   = useState({ medicineName: '', dosage: '', quantity: 1, unitPrice: 0, notes: '' });
   const [medSaving, setMedSaving] = useState(false);
 
   // follow-up modal
-  const [noteModal, setNoteModal] = useState(false);
-  const [noteForm, setNoteForm] = useState({ note: '', type: 'General', vitals: { bp: '', temp: '', pulse: '', spo2: '' } });
+  const [noteModal,  setNoteModal]  = useState(false);
+  const [noteForm,   setNoteForm]   = useState({ note: '', type: 'General', vitals: { bp: '', temp: '', pulse: '', spo2: '' } });
   const [noteSaving, setNoteSaving] = useState(false);
 
   // discharge confirm
@@ -79,31 +99,29 @@ export default function IPD() {
   // ── fetch room configs ─────────────────────────────────────────
   const fetchRoomConfigs = useCallback(async () => {
     try {
-      const { data } = await API.get('/admissions/config/room-types');
+      const { data } = await API.get(`/admissions/config/room-types?clinicId=${clinicId}`);
       setRoomConfigs(data);
-      // Set default room type to first available
       if (data.length > 0 && data[0].availableRooms > 0) {
         setAdmitForm(f => ({ ...f, roomType: data[0].roomType }));
       }
     } catch (err) {
       console.error('Failed to load room configs:', err);
-      // Fallback defaults
       setRoomConfigs([
-        { roomType: 'General Ward', dailyRate: 800, totalRooms: 5, availableRooms: 5 },
+        { roomType: 'General Ward', dailyRate: 800,  totalRooms: 5, availableRooms: 5 },
         { roomType: 'Semi-Private', dailyRate: 1500, totalRooms: 4, availableRooms: 4 },
         { roomType: 'Private Room', dailyRate: 2500, totalRooms: 3, availableRooms: 3 },
-        { roomType: 'ICU', dailyRate: 4000, totalRooms: 4, availableRooms: 4 },
+        { roomType: 'ICU',          dailyRate: 4000, totalRooms: 4, availableRooms: 4 },
       ]);
     } finally {
       setRoomConfigsLoading(false);
     }
-  }, []);
+  }, [clinicId]);
 
-  // ── fetch list ────────────────────────────────────────────────
+  // ── fetch list ─────────────────────────────────────────────────
   const fetchList = useCallback(async () => {
     setLoading(true);
     try {
-      let url = `/admissions?page=${page}&limit=15`;
+      let url = `/admissions?page=${page}&limit=15&clinicId=${clinicId}`;
       if (filterStatus) url += `&status=${filterStatus}`;
       const { data } = await API.get(url);
       setAdmissions(data.admissions);
@@ -113,7 +131,7 @@ export default function IPD() {
     } finally {
       setLoading(false);
     }
-  }, [page, filterStatus]);
+  }, [page, filterStatus, clinicId]);
 
   useEffect(() => {
     fetchList();
@@ -121,15 +139,32 @@ export default function IPD() {
   }, [fetchList, fetchRoomConfigs]);
 
   useEffect(() => {
-    API.get('/auth/users').then(r => setDoctors(r.data.filter(u => u.role === 'doctor'))).catch(console.error);
+    API.get(`/auth/users?clinicId=${clinicId}`)
+      .then(r => setDoctors(r.data.filter(u => u.role === 'doctor')))
+      .catch(console.error);
+  }, [clinicId]);
+
+  // ── Check sessionStorage for a patient pre-selected from Patients page ──
+  useEffect(() => {
+    const stored = sessionStorage.getItem('ipd_admit_patient');
+    if (stored) {
+      try {
+        const p = JSON.parse(stored);
+        setChosenPatient(p);
+        setPatientSearch(p.name);
+        setChosenDoctor(p.assignedDoctor || '');
+        setAdmitModal(true);
+      } catch { }
+      sessionStorage.removeItem('ipd_admit_patient');
+    }
   }, []);
 
-  // ── fetch detail ──────────────────────────────────────────────
+  // ── fetch detail ───────────────────────────────────────────────
   const openDetail = async (adm) => {
     setDetailLoading(true);
     setSelected(adm);
     try {
-      const { data } = await API.get(`/admissions/${adm._id}`);
+      const { data } = await API.get(`/admissions/${adm._id}?clinicId=${clinicId}`);
       setSelected(data);
     } catch (err) {
       console.error('Detail fetch error:', err);
@@ -141,7 +176,7 @@ export default function IPD() {
   const refreshDetail = async () => {
     if (!selected) return;
     try {
-      const { data } = await API.get(`/admissions/${selected._id}`);
+      const { data } = await API.get(`/admissions/${selected._id}?clinicId=${clinicId}`);
       setSelected(data);
       fetchList();
     } catch (err) {
@@ -149,14 +184,16 @@ export default function IPD() {
     }
   };
 
-  // ── patient search ────────────────────────────────────────────
+  // ── patient search ─────────────────────────────────────────────
   const handlePatientSearch = (val) => {
     setPatientSearch(val);
     clearTimeout(searchTimer);
     if (!val.trim()) { setPatientResults([]); return; }
     setSearchTimer(setTimeout(async () => {
       try {
-        const { data } = await API.get(`/patients?search=${encodeURIComponent(val)}&limit=8`);
+        const { data } = await API.get(
+          `/patients?search=${encodeURIComponent(val)}&limit=8&clinicId=${clinicId}`
+        );
         setPatientResults(data.patients || []);
       } catch (err) {
         console.error('Patient search error:', err);
@@ -164,25 +201,25 @@ export default function IPD() {
     }, 300));
   };
 
-  // ── admit submit ──────────────────────────────────────────────
+  // ── admit submit ───────────────────────────────────────────────
   const handleAdmit = async () => {
     if (!chosenPatient) return alert('Select a patient first');
-    
-    // Check if selected room type has availability
+
     const selectedRoom = roomConfigs.find(r => r.roomType === admitForm.roomType);
     if (selectedRoom && selectedRoom.availableRooms <= 0) {
       alert(`No ${admitForm.roomType} rooms available`);
       return;
     }
-    
+
     setAdmitSaving(true);
     try {
       await API.post('/admissions', {
-        patientId: chosenPatient._id,
-        doctorId: chosenDoctor || undefined,
-        roomType: admitForm.roomType,
+        clinicId,
+        patientId:  chosenPatient._id,
+        doctorId:   chosenDoctor || undefined,
+        roomType:   admitForm.roomType,
         roomNumber: admitForm.roomNumber,
-        notes: admitForm.notes,
+        notes:      admitForm.notes,
       });
       setAdmitModal(false);
       setChosenPatient(null);
@@ -190,7 +227,7 @@ export default function IPD() {
       setPatientResults([]);
       setAdmitForm({ roomType: roomConfigs[0]?.roomType || 'General Ward', roomNumber: '', notes: '' });
       fetchList();
-      fetchRoomConfigs(); // Refresh room availability
+      fetchRoomConfigs();
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to admit patient');
     } finally {
@@ -198,25 +235,25 @@ export default function IPD() {
     }
   };
 
-  // ── discharge ─────────────────────────────────────────────────
+  // ── discharge ──────────────────────────────────────────────────
   const handleDischarge = async (id) => {
     try {
-      await API.patch(`/admissions/${id}/discharge`);
+      await API.patch(`/admissions/${id}/discharge`, { clinicId });
       setDischargeId(null);
       if (selected?._id === id) refreshDetail();
       else fetchList();
-      fetchRoomConfigs(); // Refresh room availability
+      fetchRoomConfigs();
     } catch (err) {
       alert(err.response?.data?.message || 'Discharge failed');
     }
   };
 
-  // ── add medicine ──────────────────────────────────────────────
+  // ── add medicine ───────────────────────────────────────────────
   const handleAddMedicine = async () => {
     if (!medForm.medicineName.trim()) return alert('Enter medicine name');
     setMedSaving(true);
     try {
-      await API.post(`/admissions/${selected._id}/medicines`, medForm);
+      await API.post(`/admissions/${selected._id}/medicines`, { ...medForm, clinicId });
       setMedModal(false);
       setMedForm({ medicineName: '', dosage: '', quantity: 1, unitPrice: 0, notes: '' });
       refreshDetail();
@@ -227,23 +264,23 @@ export default function IPD() {
     }
   };
 
-  // ── remove medicine ───────────────────────────────────────────
+  // ── remove medicine ────────────────────────────────────────────
   const handleRemoveMed = async (medId) => {
     if (!window.confirm('Remove this medicine entry?')) return;
     try {
-      await API.delete(`/admissions/${selected._id}/medicines/${medId}`);
+      await API.delete(`/admissions/${selected._id}/medicines/${medId}?clinicId=${clinicId}`);
       refreshDetail();
-    } catch (err) {
+    } catch {
       alert('Failed to remove medicine');
     }
   };
 
-  // ── add follow-up note ────────────────────────────────────────
+  // ── add follow-up note ─────────────────────────────────────────
   const handleAddNote = async () => {
     if (!noteForm.note.trim()) return alert('Enter a note');
     setNoteSaving(true);
     try {
-      await API.post(`/admissions/${selected._id}/followup`, noteForm);
+      await API.post(`/admissions/${selected._id}/followup`, { ...noteForm, clinicId });
       setNoteModal(false);
       setNoteForm({ note: '', type: 'General', vitals: { bp: '', temp: '', pulse: '', spo2: '' } });
       refreshDetail();
@@ -254,27 +291,30 @@ export default function IPD() {
     }
   };
 
-  // ── create bill from admission ────────────────────────────────
+  // ── create bill from admission ─────────────────────────────────
   const handleCreateBill = async () => {
     try {
-      const { data: summary } = await API.get(`/admissions/${selected._id}/bill-summary`);
+      const { data: summary } = await API.get(
+        `/admissions/${selected._id}/bill-summary?clinicId=${clinicId}`
+      );
       const itemsTotal = summary.items.reduce((s, i) => s + i.total, 0);
       const grandTotal = itemsTotal + summary.roomRent;
 
       await API.post('/billing', {
-        patient: summary.patient._id,
-        items: summary.items,
-        admissionDate: summary.admissionDate,
-        dischargeDate: summary.dischargeDate,
-        daysAdmitted: summary.daysAdmitted,
-        roomType: summary.roomType,
+        clinicId,
+        patient:        summary.patient._id,
+        items:          summary.items,
+        admissionDate:  summary.admissionDate,
+        dischargeDate:  summary.dischargeDate,
+        daysAdmitted:   summary.daysAdmitted,
+        roomType:       summary.roomType,
         roomRatePerDay: summary.roomRatePerDay,
-        roomRent: summary.roomRent,
-        subtotal: grandTotal,
-        totalAmount: grandTotal,
-        paymentStatus: 'Pending',
-        paymentMethod: 'Pending',
-        notes: `Auto-generated from Admission ${summary.admissionId}`,
+        roomRent:       summary.roomRent,
+        subtotal:       grandTotal,
+        totalAmount:    grandTotal,
+        paymentStatus:  'Pending',
+        paymentMethod:  'Pending',
+        notes:          `Auto-generated from Admission ${summary.admissionId}`,
       });
 
       alert(`Bill created for ${summary.patient.name}! Go to Billing page to view.`);
@@ -283,22 +323,11 @@ export default function IPD() {
     }
   };
 
-  const pages = Math.ceil(total / 15);
-
-  // ── medicine total for selected admission ─────────────────────
+  const pages    = Math.ceil(total / 15);
   const medTotal = selected?.medicineLog?.reduce((s, m) => s + (m.total || 0), 0) || 0;
-  const days = selected
-    ? (selected.daysAdmitted || daysSince(selected.admissionDate))
-    : 0;
+  const days     = selected ? (selected.daysAdmitted || daysSince(selected.admissionDate)) : 0;
   const roomRent = days * (selected?.roomRatePerDay || 800);
   const grandTotal = medTotal + roomRent;
-
-  // Helper to get room availability text
-  const getRoomAvailabilityText = (roomType) => {
-    const config = roomConfigs.find(r => r.roomType === roomType);
-    if (!config) return '';
-    return ` (${config.availableRooms} of ${config.totalRooms} available)`;
-  };
 
   // ─────────────────────────────────────────────────────────────
   return (
@@ -307,16 +336,14 @@ export default function IPD() {
       flexDirection: isMobile ? 'column' : 'row',
       gap: 20,
       height: isMobile ? 'auto' : 'calc(100vh - 80px)',
-      overflow: 'hidden'
+      overflow: 'hidden',
     }}>
 
       {/* ── LEFT PANEL: Admission list ─────────────────────────── */}
       <div style={{
         flex: isMobile ? '1' : '0 0 440px',
         width: isMobile ? '100%' : '440px',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden'
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
         <div className="page-header" style={{ marginBottom: 12 }}>
           <h1 className="page-title" style={{ fontSize: 18 }}>🏥 IPD — Inpatient</h1>
@@ -330,14 +357,13 @@ export default function IPD() {
         {/* Filters */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 12, alignItems: 'center' }}>
           {['Admitted', 'Discharged', ''].map(s => (
-            <button
-              key={s}
+            <button key={s}
               onClick={() => { setFilterStatus(s); setPage(1); }}
               style={{
                 padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
                 border: 'none', cursor: 'pointer',
                 background: filterStatus === s ? '#0f4c81' : '#e2e8f0',
-                color: filterStatus === s ? '#fff' : '#475569',
+                color:      filterStatus === s ? '#fff'    : '#475569',
               }}
             >
               {s || 'All'}
@@ -355,20 +381,16 @@ export default function IPD() {
               No admissions found
             </div>
           ) : admissions.map(adm => {
-            const isActive = adm.status === 'Admitted';
-            const dStr = isActive ? `${daysSince(adm.admissionDate)}d admitted` : `Discharged ${fmt(adm.dischargeDate)}`;
+            const isActive   = adm.status === 'Admitted';
+            const dStr       = isActive ? `${daysSince(adm.admissionDate)}d admitted` : `Discharged ${fmt(adm.dischargeDate)}`;
             const isSelected = selected?._id === adm._id;
             return (
-              <div
-                key={adm._id}
-                onClick={() => openDetail(adm)}
-                style={{
-                  background: isSelected ? '#eff6ff' : '#fff',
-                  border: `1px solid ${isSelected ? '#93c5fd' : '#e2e8f0'}`,
-                  borderRadius: 10, padding: '12px 14px', cursor: 'pointer',
-                  transition: 'all 0.1s',
-                }}
-              >
+              <div key={adm._id} onClick={() => openDetail(adm)} style={{
+                background:  isSelected ? '#eff6ff' : '#fff',
+                border:      `1px solid ${isSelected ? '#93c5fd' : '#e2e8f0'}`,
+                borderRadius: 10, padding: '12px 14px', cursor: 'pointer',
+                transition: 'all 0.1s',
+              }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 14 }}>{adm.patient?.name}</div>
@@ -386,18 +408,19 @@ export default function IPD() {
                   <span style={{
                     fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
                     background: statusColor[adm.status] || '#f1f5f9',
-                    color: statusText[adm.status] || '#475569',
+                    color:      statusText[adm.status]  || '#475569',
                   }}>
                     {adm.status}
                   </span>
                 </div>
                 <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11, color: '#64748b' }}>
                   <span>💊 {adm.medicineLog?.length || 0} medicines</span>
-                  <span>📋 {adm.followupLog?.length || 0} notes</span>
+                  <span>📋 {adm.followupLog?.length  || 0} notes</span>
                 </div>
               </div>
             );
           })}
+
           {pages > 1 && (
             <div className="pagination" style={{ justifyContent: 'center', marginTop: 8 }}>
               <button className="page-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>‹</button>
@@ -411,13 +434,7 @@ export default function IPD() {
       </div>
 
       {/* ── RIGHT PANEL: Admission detail ─────────────────────────── */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          display: isMobile ? 'none' : 'block'
-        }}
-      >
+      <div style={{ flex: 1, overflowY: 'auto', display: isMobile ? 'none' : 'block' }}>
         {!selected ? (
           <div style={{
             height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -481,11 +498,9 @@ export default function IPD() {
                     {selected.status}
                   </span>
                   {selected.status === 'Admitted' && isReceptionist && (
-                    <button
-                      className="btn btn-sm btn-outline"
+                    <button className="btn btn-sm btn-outline"
                       style={{ borderColor: '#ef4444', color: '#ef4444' }}
-                      onClick={() => setDischargeId(selected._id)}
-                    >
+                      onClick={() => setDischargeId(selected._id)}>
                       🚪 Discharge
                     </button>
                   )}
@@ -515,7 +530,7 @@ export default function IPD() {
               </div>
             </div>
 
-            {/* ── Medicine Log ───────────────────────────── */}
+            {/* ── Medicine Log ─────────────────────────────── */}
             <div className="card" style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <h3 style={{ fontSize: 14, margin: 0 }}>💊 Medicine Log</h3>
@@ -550,10 +565,10 @@ export default function IPD() {
                         <td style={{ padding: '8px 10px', color: '#94a3b8', fontSize: 11 }}>{fmtTime(m.givenAt)}</td>
                         <td style={{ padding: '8px 4px' }}>
                           {isReceptionist && selected.status === 'Admitted' && (
-                            <button
-                              onClick={() => handleRemoveMed(m._id)}
-                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}
-                            >×</button>
+                            <button onClick={() => handleRemoveMed(m._id)}
+                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>
+                              ×
+                            </button>
                           )}
                         </td>
                       </tr>
@@ -563,7 +578,7 @@ export default function IPD() {
               )}
             </div>
 
-            {/* ── Follow-up / History Log ────────────────── */}
+            {/* ── Follow-up / History Log ──────────────────── */}
             <div className="card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <h3 style={{ fontSize: 14, margin: 0 }}>📋 Patient History / Follow-ups</h3>
@@ -581,8 +596,8 @@ export default function IPD() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {[...selected.followupLog].reverse().map((log, i) => {
                     const typeColor = {
-                      Doctor: { bg: '#eff6ff', border: '#bfdbfe', badge: '#1e40af', badgeBg: '#dbeafe' },
-                      Nurse: { bg: '#f0fdf4', border: '#bbf7d0', badge: '#065f46', badgeBg: '#d1fae5' },
+                      Doctor:  { bg: '#eff6ff', border: '#bfdbfe', badge: '#1e40af', badgeBg: '#dbeafe' },
+                      Nurse:   { bg: '#f0fdf4', border: '#bbf7d0', badge: '#065f46', badgeBg: '#d1fae5' },
                       General: { bg: '#f8fafc', border: '#e2e8f0', badge: '#475569', badgeBg: '#f1f5f9' },
                     }[log.type] || { bg: '#f8fafc', border: '#e2e8f0', badge: '#475569', badgeBg: '#f1f5f9' };
                     return (
@@ -632,7 +647,7 @@ export default function IPD() {
         )}
       </div>
 
-      {/* ── ADMIT MODAL (UPDATED with dynamic room options) ────────────────────────────── */}
+      {/* ── ADMIT MODAL ──────────────────────────────────────────── */}
       {admitModal && (
         <div className="modal-overlay" onClick={() => setAdmitModal(false)}>
           <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
@@ -651,6 +666,8 @@ export default function IPD() {
                   value={patientSearch}
                   onChange={e => { handlePatientSearch(e.target.value); setChosenPatient(null); }}
                   autoComplete="off"
+                  readOnly={!!chosenPatient}
+                  style={chosenPatient ? { background: '#f8fafc', color: '#475569' } : {}}
                 />
                 {patientResults.length > 0 && !chosenPatient && (
                   <div style={{
@@ -659,8 +676,7 @@ export default function IPD() {
                     boxShadow: '0 4px 16px rgba(0,0,0,0.10)', maxHeight: 200, overflowY: 'auto',
                   }}>
                     {patientResults.map(p => (
-                      <div
-                        key={p._id}
+                      <div key={p._id}
                         style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
                         onMouseEnter={e => e.currentTarget.style.background = '#f0f9ff'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
@@ -683,8 +699,13 @@ export default function IPD() {
                 <div style={{
                   background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8,
                   padding: '10px 14px', marginBottom: 14, fontSize: 12,
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 }}>
-                  ✓ <strong>{chosenPatient.name}</strong> — {chosenPatient.patientId} · {chosenPatient.phone}
+                  <span>✓ <strong>{chosenPatient.name}</strong> — {chosenPatient.patientId} · {chosenPatient.phone}</span>
+                  <button onClick={() => { setChosenPatient(null); setPatientSearch(''); }}
+                    style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 16 }}>
+                    ×
+                  </button>
                 </div>
               )}
 
@@ -694,20 +715,13 @@ export default function IPD() {
                   {roomConfigsLoading ? (
                     <div className="spinner" style={{ height: 36 }} />
                   ) : (
-                    <select 
-                      className="form-control" 
-                      value={admitForm.roomType} 
-                      onChange={e => setAdmitForm(f => ({ ...f, roomType: e.target.value }))}
-                    >
+                    <select className="form-control" value={admitForm.roomType}
+                      onChange={e => setAdmitForm(f => ({ ...f, roomType: e.target.value }))}>
                       {roomConfigs.map(config => {
                         const isAvailable = config.availableRooms > 0;
                         return (
-                          <option 
-                            key={config.roomType} 
-                            value={config.roomType}
-                            disabled={!isAvailable}
-                          >
-                            {config.roomType} — ₹{config.dailyRate}/day 
+                          <option key={config.roomType} value={config.roomType} disabled={!isAvailable}>
+                            {config.roomType} — ₹{config.dailyRate}/day
                             ({config.availableRooms} of {config.totalRooms} available)
                             {!isAvailable ? ' ❌ FULL' : ''}
                           </option>
@@ -727,7 +741,9 @@ export default function IPD() {
                 <label className="form-label">Treating Doctor</label>
                 <select className="form-control" value={chosenDoctor} onChange={e => setChosenDoctor(e.target.value)}>
                   <option value="">— None / TBD —</option>
-                  {doctors.map(d => <option key={d._id} value={d._id}>{d.name} ({d.department || 'General'})</option>)}
+                  {doctors.map(d => (
+                    <option key={d._id} value={d._id}>{d.name} ({d.department || 'General'})</option>
+                  ))}
                 </select>
               </div>
 
@@ -748,7 +764,7 @@ export default function IPD() {
         </div>
       )}
 
-      {/* ── ADD MEDICINE MODAL ─────────────────────────────────────── */}
+      {/* ── ADD MEDICINE MODAL ───────────────────────────────────── */}
       {medModal && (
         <div className="modal-overlay" onClick={() => setMedModal(false)}>
           <div className="modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
@@ -812,7 +828,7 @@ export default function IPD() {
         </div>
       )}
 
-      {/* ── ADD FOLLOW-UP NOTE MODAL ───────────────────────────────── */}
+      {/* ── ADD FOLLOW-UP NOTE MODAL ─────────────────────────────── */}
       {noteModal && (
         <div className="modal-overlay" onClick={() => setNoteModal(false)}>
           <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
@@ -862,7 +878,7 @@ export default function IPD() {
         </div>
       )}
 
-      {/* ── DISCHARGE CONFIRM ─────────────────────────────────────── */}
+      {/* ── DISCHARGE CONFIRM ────────────────────────────────────── */}
       {dischargeId && (
         <div className="modal-overlay" onClick={() => setDischargeId(null)}>
           <div className="modal" style={{ maxWidth: 380, textAlign: 'center' }} onClick={e => e.stopPropagation()}>

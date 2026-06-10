@@ -55,7 +55,6 @@ const avatarColor = (name = '') =>
   AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length];
 
 // ── Inline styles ──────────────────────────────────────────────
-
 const css = {
   page: {
     padding: '0',
@@ -174,26 +173,28 @@ const css = {
 };
 
 export default function Staff() {
-  const [users,       setUsers]       = useState([]);
-  const [loading,     setLoading]     = useState(true);
-  const [modal,       setModal]       = useState(false);
-  const [form,        setForm]        = useState(emptyForm);
-  const [editId,      setEditId]      = useState(null);
-  const [filterRole,  setFilterRole]  = useState('');
-  const [saving,      setSaving]      = useState(false);
-  const [error,       setError]       = useState('');
-  // ✅ NEW: track if email field was touched to show inline hint
+  const [users,        setUsers]        = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [modal,        setModal]        = useState(false);
+  const [form,         setForm]         = useState(emptyForm);
+  const [editId,       setEditId]       = useState(null);
+  const [filterRole,   setFilterRole]   = useState('');
+  const [saving,       setSaving]       = useState(false);
+  const [error,        setError]        = useState('');
   const [emailTouched, setEmailTouched] = useState(false);
 
-  const [workPanel,   setWorkPanel]   = useState(null);
-  const [workData,    setWorkData]    = useState(null);
-  const [workLoading, setWorkLoading] = useState(false);
+  const [workPanel,    setWorkPanel]    = useState(null);
+  const [workData,     setWorkData]     = useState(null);
+  const [workLoading,  setWorkLoading]  = useState(false);
 
+  // ✅ FIX: backend now filters by clinicId from JWT — returns only this clinic's staff
   const fetchUsers = async () => {
     setLoading(true);
     try {
       const { data } = await API.get('/auth/users');
       setUsers(data);
+    } catch (err) {
+      console.error('Failed to fetch staff', err);
     } finally {
       setLoading(false);
     }
@@ -238,30 +239,30 @@ export default function Staff() {
     setForm(f => ({ ...f, permissions: hasAll ? ['dashboard'] : allKeys }));
   };
 
-  // ✅ Check if entered email already exists among current users (client-side hint)
   const emailAlreadyExists = !editId
     ? users.some(u => u.email.toLowerCase() === form.email.toLowerCase() && form.email !== '')
     : users.some(u => u.email.toLowerCase() === form.email.toLowerCase() && u._id !== editId && form.email !== '');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    // ✅ Block submit instantly if email duplicate detected client-side
     if (emailAlreadyExists) {
-      setError('This email is already registered in our system');
+      setError('This email is already registered in this clinic');
       return;
     }
     setSaving(true); setError('');
     try {
       if (editId) {
+        // ✅ Update existing staff — backend checks clinicId ownership
         const payload = { ...form };
         if (!payload.password) delete payload.password;
         await API.put(`/auth/users/${editId}`, payload);
       } else {
-        await API.post('/auth/register', form);
+        // ✅ FIX: use /auth/users (not /auth/register) so backend attaches clinicId from JWT
+        await API.post('/auth/users', form);
       }
-      setModal(false); setForm(emptyForm); setEditId(null); setEmailTouched(false); fetchUsers();
+      setModal(false); setForm(emptyForm); setEditId(null); setEmailTouched(false);
+      fetchUsers();
     } catch (err) {
-      // ✅ Shows the exact message returned from backend
       setError(err.response?.data?.message || 'Something went wrong');
     } finally {
       setSaving(false);
@@ -279,10 +280,10 @@ export default function Staff() {
 
   const openAdd = () => { setForm(emptyForm); setEditId(null); setError(''); setEmailTouched(false); setModal(true); };
 
-  const filtered = filterRole ? users.filter(u => u.role === filterRole) : users;
+  const filtered    = filterRole ? users.filter(u => u.role === filterRole) : users;
   const isAdminRole = (role) => role === 'admin';
-  const allKeys = ALL_MODULES.map(m => m.key);
-  const hasAll  = allKeys.every(k => form.permissions.includes(k));
+  const allKeys     = ALL_MODULES.map(m => m.key);
+  const hasAll      = allKeys.every(k => form.permissions.includes(k));
 
   return (
     <div style={css.page}>
@@ -532,7 +533,6 @@ export default function Staff() {
                 </div>
 
                 <div className="form-row">
-                  {/* ✅ Email field with inline duplicate warning */}
                   <div className="form-group">
                     <label className="form-label">Email *</label>
                     <input
@@ -541,20 +541,19 @@ export default function Staff() {
                       value={form.email}
                       onChange={e => {
                         setForm({ ...form, email: e.target.value });
-                        setError(''); // clear submit error while typing
+                        setError('');
                       }}
                       onBlur={() => setEmailTouched(true)}
                       required
                       style={emailTouched && emailAlreadyExists ? { borderColor: '#dc2626', background: '#fff5f5' } : {}}
                     />
-                    {/* ✅ Inline warning shown as soon as user leaves the email field */}
                     {emailTouched && emailAlreadyExists && (
                       <div style={{
                         marginTop: 5,
                         display: 'flex', alignItems: 'center', gap: 6,
                         fontSize: 12, color: '#dc2626', fontWeight: 500,
                       }}>
-                        ⚠️ This email is already registered in our system
+                        ⚠️ This email is already registered in this clinic
                       </div>
                     )}
                   </div>
@@ -606,7 +605,7 @@ export default function Staff() {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', opacity: isAdminRole(form.role) ? 0.5 : 1, pointerEvents: isAdminRole(form.role) ? 'none' : 'auto' }}>
                     {ALL_MODULES.map((mod, idx) => {
-                      const on = form.permissions.includes(mod.key);
+                      const on     = form.permissions.includes(mod.key);
                       const locked = mod.key === 'dashboard';
                       return (
                         <div key={mod.key} style={{
@@ -647,7 +646,6 @@ export default function Staff() {
                   )}
                 </div>
 
-                {/* ✅ Error banner — shown on submit failure from backend */}
                 {error && (
                   <div style={{
                     padding: '10px 14px', borderRadius: 8,

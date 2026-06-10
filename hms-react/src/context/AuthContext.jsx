@@ -9,6 +9,7 @@ export const AuthProvider = ({ children }) => {
   const [loading,   setLoading]   = useState(false);
   const [authReady, setAuthReady] = useState(false);
 
+  // On app load: restore session from token
   useEffect(() => {
     const token = localStorage.getItem('hms_token');
     if (!token) {
@@ -17,6 +18,7 @@ export const AuthProvider = ({ children }) => {
     }
     API.get('/auth/profile')
       .then(({ data }) => {
+        // ✅ data includes clinicId from DB — store full user object
         setUser(data);
       })
       .catch(() => {
@@ -28,11 +30,13 @@ export const AuthProvider = ({ children }) => {
       });
   }, []);
 
+  // ── Login ────────────────────────────────────────────────────
   const login = async (email, password) => {
     setLoading(true);
     try {
       const { data } = await API.post('/auth/login', { email, password });
       localStorage.setItem('hms_token', data.token);
+      // ✅ data.user contains clinicId — keep it in state
       setUser(data.user);
       return { success: true };
     } catch (err) {
@@ -42,11 +46,13 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // ── Register (creates clinic + admin) ────────────────────────
   const register = async (formData) => {
     setLoading(true);
     try {
       const { data } = await API.post('/auth/register', formData);
       localStorage.setItem('hms_token', data.token);
+      // ✅ data.user contains clinicId — keep it in state
       setUser(data.user);
       return { success: true };
     } catch (err) {
@@ -56,12 +62,13 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // ── Logout ───────────────────────────────────────────────────
   const logout = () => {
     localStorage.removeItem('hms_token');
     setUser(null);
   };
 
-  // ── FIXED: case-insensitive role check ─────────────────────────
+  // ── Permission check ─────────────────────────────────────────
   const hasPerm = (key) => {
     if (!user) return false;
     if (user.role?.toLowerCase() === 'admin') return true;

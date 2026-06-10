@@ -8,28 +8,39 @@ const Billing     = require('../models/Billing');
 const Pharmacy    = require('../models/Pharmacy');
 const Lab         = require('../models/Lab');
 const Inventory   = require('../models/Inventory');
-const Admission   = require('../models/Admission');   // ← NEW
+const Admission   = require('../models/Admission');
+const Appointment = require('../models/Appointment');
+
+/**
+ * Resolves clinicId from (in priority order):
+ *  1. req.query.clinicId  — GET requests pass it as a query param
+ *  2. req.user.clinicId   — set by the auth middleware from the JWT
+ *  3. 'default'           — safe fallback
+ */
+function resolveClinicId(req) {
+  return req.query?.clinicId || req.user?.clinicId || 'default';
+}
 
 router.get('/stats', auth, async (req, res) => {
   try {
-    const role   = req.user.role;
-    const userId = req.user.id;
-    const today  = new Date();
-    today.setHours(0, 0, 0, 0);
+    const clinicId = resolveClinicId(req);
+    const role     = req.user.role;
+    const userId   = req.user.id;
+
+    const today    = new Date(); today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
 
     /* ── Helpers shared across roles ──────────────────────── */
-    const todayAppointments   = await Appointment.countDocuments({ date: { $gte: today, $lt: tomorrow } });
-    const pendingAppointments = await Appointment.countDocuments({ status: 'Scheduled' });
+    const todayAppointments   = await Appointment.countDocuments({ clinicId, date: { $gte: today, $lt: tomorrow } });
+    const pendingAppointments = await Appointment.countDocuments({ clinicId, status: 'Scheduled' });
     const recentAppointments  = await Appointment
-      .find({ date: { $gte: today, $lt: tomorrow } })
+      .find({ clinicId, date: { $gte: today, $lt: tomorrow } })
       .populate('patient', 'name')
       .populate('doctor',  'name')
       .sort({ time: 1 })
       .limit(5);
 
-    // Currently admitted patients count — shared by multiple roles
-    const admittedPatients = await Admission.countDocuments({ status: 'Admitted' });
+    const admittedPatients = await Admission.countDocuments({ clinicId, status: 'Admitted' });
 
     /* ──────────────────────────────────────────────────────
        ADMIN — full stats
@@ -40,21 +51,23 @@ router.get('/stats', auth, async (req, res) => {
         totalPatients, activePatients, totalRevenue,
         pendingBills, lowStockItems, pendingLabs, monthlyRevenue,
       ] = await Promise.all([
-        Patient.countDocuments(),
-        Patient.countDocuments({ status: 'Active' }),
-        Billing.aggregate([{ $match: { paymentStatus: 'Paid' } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-        Billing.countDocuments({ paymentStatus: 'Pending' }),
-        Inventory.countDocuments({ quantity: { $lt: 10 } }),
-        Lab.countDocuments({ status: 'Pending' }),
+        Patient.countDocuments({ clinicId }),
+        Patient.countDocuments({ clinicId, status: 'Active' }),
         Billing.aggregate([
-          { $match: { paymentStatus: 'Paid', createdAt: { $gte: sixMonthsAgo } } },
+          { $match: { clinicId, paymentStatus: 'Paid' } },
+          { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+        ]),
+        Billing.countDocuments({ clinicId, paymentStatus: 'Pending' }),
+        Inventory.countDocuments({ clinicId, quantity: { $lt: 10 } }),
+        Lab.countDocuments({ clinicId, status: 'Pending' }),
+        Billing.aggregate([
+          { $match: { clinicId, paymentStatus: 'Paid', createdAt: { $gte: sixMonthsAgo } } },
           { $group: { _id: { month: { $month: '$createdAt' }, year: { $year: '$createdAt' } }, total: { $sum: '$totalAmount' } } },
           { $sort: { '_id.year': 1, '_id.month': 1 } },
         ]),
       ]);
 
-      // Recent admitted patients for admin IPD panel
-      const recentAdmissions = await Admission.find({ status: 'Admitted' })
+      const recentAdmissions = await Admission.find({ clinicId, status: 'Admitted' })
         .populate('patient', 'name patientId')
         .populate('doctor',  'name')
         .sort({ admissionDate: -1 })
@@ -63,7 +76,7 @@ router.get('/stats', auth, async (req, res) => {
       return res.json({
         totalPatients,
         activePatients,
-        admittedPatients,           // ← NEW
+        admittedPatients,
         todayAppointments,
         pendingAppointments,
         totalRevenue: totalRevenue[0]?.total || 0,
@@ -72,7 +85,7 @@ router.get('/stats', auth, async (req, res) => {
         pendingLabs,
         monthlyRevenue,
         recentAppointments,
-        recentAdmissions,           // ← NEW
+        recentAdmissions,
       });
     }
 
@@ -80,15 +93,13 @@ router.get('/stats', auth, async (req, res) => {
        DOCTOR — my patients + my appointments + labs + IPD
     ────────────────────────────────────────────────────── */
     if (role === 'doctor') {
-      const myPatients  = await Appointment.distinct('patient', { doctor: userId });
-      const pendingLabs = await Lab.countDocuments({ doctor: userId, status: 'Pending' });
-
-      // Admitted patients assigned to this doctor
-      const myAdmittedPatients = await Admission.countDocuments({ doctor: userId, status: 'Admitted' });
+      const myPatients         = await Appointment.distinct('patient', { clinicId, doctor: userId });
+      const pendingLabs        = await Lab.countDocuments({ clinicId, doctor: userId, status: 'Pending' });
+      const myAdmittedPatients = await Admission.countDocuments({ clinicId, doctor: userId, status: 'Admitted' });
 
       return res.json({
-        myPatients: myPatients.length,
-        admittedPatients: myAdmittedPatients,   // ← NEW
+        myPatients:      myPatients.length,
+        admittedPatients: myAdmittedPatients,
         todayAppointments,
         pendingAppointments,
         pendingLabs,
@@ -100,12 +111,12 @@ router.get('/stats', auth, async (req, res) => {
        NURSE — active patients + admitted + today schedule + pending labs
     ────────────────────────────────────────────────────── */
     if (role === 'nurse') {
-      const activePatients = await Patient.countDocuments({ status: 'Active' });
-      const pendingLabs    = await Lab.countDocuments({ status: 'Pending' });
+      const activePatients = await Patient.countDocuments({ clinicId, status: 'Active' });
+      const pendingLabs    = await Lab.countDocuments({ clinicId, status: 'Pending' });
 
       return res.json({
         activePatients,
-        admittedPatients,           // ← NEW
+        admittedPatients,
         todayAppointments,
         pendingLabs,
         recentAppointments,
@@ -117,12 +128,11 @@ router.get('/stats', auth, async (req, res) => {
     ────────────────────────────────────────────────────── */
     if (role === 'receptionist') {
       const [totalPatients, pendingBills] = await Promise.all([
-        Patient.countDocuments(),
-        Billing.countDocuments({ paymentStatus: 'Pending' }),
+        Patient.countDocuments({ clinicId }),
+        Billing.countDocuments({ clinicId, paymentStatus: 'Pending' }),
       ]);
 
-      // Recent admissions — receptionist manages these
-      const recentAdmissions = await Admission.find({ status: 'Admitted' })
+      const recentAdmissions = await Admission.find({ clinicId, status: 'Admitted' })
         .populate('patient', 'name patientId')
         .populate('doctor',  'name')
         .sort({ admissionDate: -1 })
@@ -133,9 +143,9 @@ router.get('/stats', auth, async (req, res) => {
         pendingAppointments,
         pendingBills,
         totalPatients,
-        admittedPatients,           // ← NEW
+        admittedPatients,
         recentAppointments,
-        recentAdmissions,           // ← NEW
+        recentAdmissions,
       });
     }
 
@@ -144,11 +154,11 @@ router.get('/stats', auth, async (req, res) => {
     ────────────────────────────────────────────────────── */
     if (role === 'pharmacist') {
       const [lowStockItems, outOfStock, pendingOrders, totalMeds, lowStockMeds] = await Promise.all([
-        Inventory.countDocuments({ quantity: { $gt: 0, $lt: 10 } }),
-        Inventory.countDocuments({ quantity: 0 }),
-        Pharmacy.countDocuments({ status: 'Pending' }),
-        Inventory.countDocuments(),
-        Inventory.find({ quantity: { $lt: 10 } }).sort({ quantity: 1 }).limit(8),
+        Inventory.countDocuments({ clinicId, quantity: { $gt: 0, $lt: 10 } }),
+        Inventory.countDocuments({ clinicId, quantity: 0 }),
+        Pharmacy.countDocuments({ clinicId, status: 'Pending' }),
+        Inventory.countDocuments({ clinicId }),
+        Inventory.find({ clinicId, quantity: { $lt: 10 } }).sort({ quantity: 1 }).limit(8),
       ]);
 
       return res.json({ lowStockItems, outOfStock, pendingOrders, totalMeds, lowStockMeds });
@@ -159,11 +169,11 @@ router.get('/stats', auth, async (req, res) => {
     ────────────────────────────────────────────────────── */
     if (role === 'lab_technician') {
       const [pendingLabs, completedLabs, urgentLabs, totalLabs, pendingLabList] = await Promise.all([
-        Lab.countDocuments({ status: 'Pending' }),
-        Lab.countDocuments({ status: 'Completed', updatedAt: { $gte: today } }),
-        Lab.countDocuments({ status: 'Pending', priority: 'urgent' }),
-        Lab.countDocuments(),
-        Lab.find({ status: 'Pending' })
+        Lab.countDocuments({ clinicId, status: 'Pending' }),
+        Lab.countDocuments({ clinicId, status: 'Completed', updatedAt: { $gte: today } }),
+        Lab.countDocuments({ clinicId, status: 'Pending', priority: 'urgent' }),
+        Lab.countDocuments({ clinicId }),
+        Lab.find({ clinicId, status: 'Pending' })
            .populate('patient', 'name')
            .populate('doctor',  'name')
            .sort({ priority: -1, createdAt: 1 })

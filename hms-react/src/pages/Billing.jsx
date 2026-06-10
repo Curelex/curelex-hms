@@ -3,6 +3,25 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import API from '../utils/api';
 import { generateBillPDF } from '../utils/BillPDF';
 
+// ── Resolve clinicId from the stored JWT / user object ───────────────────────
+// Adjust the key name ("user", "clinic", etc.) to match what your app stores.
+function getClinicId() {
+  try {
+    const raw = localStorage.getItem('user');          // change key if needed
+    if (!raw) return 'default';
+    const parsed = JSON.parse(raw);
+    // Support { clinicId } directly, or nested { clinic: { _id } }, or { clinic: "id" }
+    return (
+      parsed.clinicId ||
+      parsed.clinic?._id ||
+      parsed.clinic ||
+      'default'
+    );
+  } catch {
+    return 'default';
+  }
+}
+
 const ROOM_RATES = {
   'General Ward': 800,
   'Semi-Private': 1500,
@@ -33,6 +52,8 @@ function recalcTotals(items, roomRent, discount, tax) {
 }
 
 export default function Billing() {
+  const clinicId = getClinicId();   // stable for the lifetime of this render tree
+
   const [bills,        setBills]        = useState([]);
   const [total,        setTotal]        = useState(0);
   const [loading,      setLoading]      = useState(true);
@@ -43,8 +64,6 @@ export default function Billing() {
   const [page,         setPage]         = useState(1);
   const [pdfLoading,   setPdfLoading]   = useState('');
 
-  // ── NEW: tracks items that existed before this edit session ──
-  // so we only append genuinely new items, not re-add old ones
   const [existingItemCount, setExistingItemCount] = useState(0);
 
   // patient search
@@ -53,7 +72,7 @@ export default function Billing() {
   const [patientLoading, setPatientLoading] = useState(false);
   const [showDropdown,   setShowDropdown]   = useState(false);
   const [fetchingItems,  setFetchingItems]  = useState(false);
-  const [checkingBill,   setCheckingBill]   = useState(false); // checking for existing bill
+  const [checkingBill,   setCheckingBill]   = useState(false);
   const searchRef   = useRef(null);
   const searchTimer = useRef(null);
 
@@ -62,11 +81,11 @@ export default function Billing() {
   const [labItemsLoading, setLabItemsLoading] = useState(false);
   const [usedLabRequests, setUsedLabRequests] = useState([]);
 
-  // ── Fetch bill list ──────────────────────────────────────────
+  // ── Fetch bill list ──────────────────────────────────────────────────────────
   const fetchBills = async () => {
     setLoading(true);
     try {
-      let url = `/billing?page=${page}&limit=15`;
+      let url = `/billing?page=${page}&limit=15&clinicId=${clinicId}`;
       if (filterStatus) url += `&status=${filterStatus}`;
       const { data } = await API.get(url);
       setBills(data.bills);
@@ -76,7 +95,7 @@ export default function Billing() {
     }
   };
 
-  useEffect(() => { fetchBills(); }, [page, filterStatus]);
+  useEffect(() => { fetchBills(); }, [page, filterStatus]);   // eslint-disable-line
 
   useEffect(() => {
     const handler = (e) => {
@@ -87,11 +106,11 @@ export default function Billing() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // ── PDF ───────────────────────────────────────────────────────
+  // ── PDF ──────────────────────────────────────────────────────────────────────
   const handleDownloadPDF = async (billId) => {
     setPdfLoading(billId);
     try {
-      const { data } = await API.get(`/billing/${billId}`);
+      const { data } = await API.get(`/billing/${billId}?clinicId=${clinicId}`);
       generateBillPDF(data);
     } catch {
       alert('Could not load bill data for PDF.');
@@ -100,19 +119,21 @@ export default function Billing() {
     }
   };
 
-  // ── Pending lab billing requests ──────────────────────────────
+  // ── Pending lab billing requests ─────────────────────────────────────────────
   const fetchPendingLabItems = useCallback(async (patientMongoId) => {
     if (!patientMongoId) { setPendingLabItems([]); return; }
     setLabItemsLoading(true);
     try {
-      const { data } = await API.get(`/billing-requests/patient/${patientMongoId}`);
+      const { data } = await API.get(
+        `/billing-requests/patient/${patientMongoId}?clinicId=${clinicId}`
+      );
       setPendingLabItems(data);
     } catch {
       setPendingLabItems([]);
     } finally {
       setLabItemsLoading(false);
     }
-  }, []);
+  }, [clinicId]);
 
   const addLabItemsToBill = (req) => {
     const newItems = req.tests.map(t => ({
@@ -129,7 +150,7 @@ export default function Billing() {
     setUsedLabRequests(prev => [...prev, req]);
   };
 
-  // ── KEY FUNCTION: load an existing bill into the edit form ────
+  // ── Load an existing bill into the edit form ─────────────────────────────────
   const loadExistingBill = useCallback((bill) => {
     const items = bill.items || [];
     setForm({
@@ -139,12 +160,12 @@ export default function Billing() {
       patientName: bill.patient?.name || '',
       items,
     });
-    setExistingItemCount(items.length); // remember how many items existed
+    setExistingItemCount(items.length);
     setPatientSearch(bill.patient?.name || '');
     setEditId(bill._id);
   }, []);
 
-  // ── Patient search ────────────────────────────────────────────
+  // ── Patient search ────────────────────────────────────────────────────────────
   const handlePatientSearch = (val) => {
     setPatientSearch(val);
     setShowDropdown(true);
@@ -153,7 +174,9 @@ export default function Billing() {
     searchTimer.current = setTimeout(async () => {
       setPatientLoading(true);
       try {
-        const { data } = await API.get(`/patients?search=${encodeURIComponent(val)}&limit=8`);
+        const { data } = await API.get(
+          `/patients?search=${encodeURIComponent(val)}&limit=8&clinicId=${clinicId}`
+        );
         setPatientResults(data.patients || []);
       } catch {
         setPatientResults([]);
@@ -163,10 +186,7 @@ export default function Billing() {
     }, 300);
   };
 
-  // ── Patient selected ──────────────────────────────────────────
-  // 1. Check if a bill already exists for this patient
-  // 2. If yes  → load that bill into edit mode + append new items
-  // 3. If no   → fresh create mode
+  // ── Patient selected ──────────────────────────────────────────────────────────
   const handleSelectPatient = async (patient) => {
     setPatientSearch(patient.name);
     setShowDropdown(false);
@@ -174,23 +194,25 @@ export default function Billing() {
     setPendingLabItems([]);
     setUsedLabRequests([]);
 
-    // Step 1: check for existing bill
     setCheckingBill(true);
     try {
-      const { data: check } = await API.get(`/billing/check-patient/${patient._id}`);
+      const { data: check } = await API.get(
+        `/billing/check-patient/${patient._id}?clinicId=${clinicId}`
+      );
 
       if (check.exists) {
-        // ── Existing bill found → load it in edit mode ─────────
         const existingBill = check.bill;
         loadExistingBill(existingBill);
 
-        // Fetch new medicines/lab items to append
         setFetchingItems(true);
         try {
-          const { data: itemsData } = await API.get(`/billing/patient-items/${patient._id}`);
+          const { data: itemsData } = await API.get(
+            `/billing/patient-items/${patient._id}?clinicId=${clinicId}`
+          );
           const newItems = (itemsData.items || []).filter(newItem =>
-            // Only add items not already in the bill (match by sourceRef)
-            !(existingBill.items || []).some(ei => ei.sourceRef && ei.sourceRef === newItem.sourceRef)
+            !(existingBill.items || []).some(
+              ei => ei.sourceRef && ei.sourceRef === newItem.sourceRef
+            )
           );
           if (newItems.length > 0) {
             setForm(f => {
@@ -203,18 +225,18 @@ export default function Billing() {
           setFetchingItems(false);
         }
 
-        // Fetch pending lab requests
         fetchPendingLabItems(patient._id);
 
       } else {
-        // ── No existing bill → fresh create mode ───────────────
         setForm(f => ({ ...f, patient: patient._id, patientName: patient.name, items: [] }));
         setEditId(null);
         setExistingItemCount(0);
 
         setFetchingItems(true);
         try {
-          const { data: itemsData } = await API.get(`/billing/patient-items/${patient._id}`);
+          const { data: itemsData } = await API.get(
+            `/billing/patient-items/${patient._id}?clinicId=${clinicId}`
+          );
           const fetchedItems = itemsData.items || [];
           setForm(f => {
             const { subtotal, totalAmount } = recalcTotals(fetchedItems, f.roomRent, f.discount, f.tax);
@@ -227,7 +249,6 @@ export default function Billing() {
         fetchPendingLabItems(patient._id);
       }
     } catch {
-      // If check fails, fall back to create mode
       setForm(f => ({ ...f, patient: patient._id, patientName: patient.name, items: [] }));
       setEditId(null);
     } finally {
@@ -235,13 +256,14 @@ export default function Billing() {
     }
   };
 
-  // ── Item updates ──────────────────────────────────────────────
+  // ── Item updates ─────────────────────────────────────────────────────────────
   const updateItem = (idx, field, val) => {
     setForm(f => {
       const items = [...f.items];
       items[idx] = { ...items[idx], [field]: val };
       if (field === 'quantity' || field === 'unitPrice') {
-        items[idx].total = (Number(items[idx].quantity) || 0) * (Number(items[idx].unitPrice) || 0);
+        items[idx].total =
+          (Number(items[idx].quantity) || 0) * (Number(items[idx].unitPrice) || 0);
       }
       const { subtotal, totalAmount } = recalcTotals(items, f.roomRent, f.discount, f.tax);
       return { ...f, items, subtotal, totalAmount };
@@ -257,7 +279,7 @@ export default function Billing() {
     });
   };
 
-  // ── Room rent ─────────────────────────────────────────────────
+  // ── Room rent ─────────────────────────────────────────────────────────────────
   const updateRoom = (field, val) => {
     setForm(f => {
       const next = { ...f, [field]: val };
@@ -285,34 +307,40 @@ export default function Billing() {
     });
   };
 
-  // ── Submit ────────────────────────────────────────────────────
+  // ── Submit ────────────────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.patient) return alert('Please select a patient.');
 
+    // Always include clinicId in the request body
+    const payload = { ...form, clinicId };
+
     let savedBill;
     try {
       if (editId) {
-        // Always PUT when we have an editId (existing bill)
-        const { data } = await API.put(`/billing/${editId}`, form);
+        const { data } = await API.put(`/billing/${editId}`, payload);
         savedBill = data;
       } else {
-        const { data } = await API.post('/billing', form);
+        const { data } = await API.post('/billing', payload);
 
-        // Backend returned 409 duplicate → switch to edit mode seamlessly
         if (data.duplicate) {
           loadExistingBill(data.bill);
-          alert(`Switched to existing bill ${data.bill.billId} for this patient. Please review and save again.`);
+          alert(
+            `Switched to existing bill ${data.bill.billId} for this patient. ` +
+            `Please review and save again.`
+          );
           return;
         }
         savedBill = data;
       }
     } catch (err) {
-      // Axios throws on 4xx — handle 409 duplicate from catch too
       const errData = err.response?.data;
       if (errData?.duplicate) {
         loadExistingBill(errData.bill);
-        alert(`Switched to existing bill ${errData.bill.billId} for this patient. Please review and save again.`);
+        alert(
+          `Switched to existing bill ${errData.bill.billId} for this patient. ` +
+          `Please review and save again.`
+        );
         return;
       }
       alert(errData?.message || 'Failed to save bill. Please try again.');
@@ -323,7 +351,10 @@ export default function Billing() {
     if (savedBill?._id && usedLabRequests.length > 0) {
       await Promise.allSettled(
         usedLabRequests.map(req =>
-          API.post(`/billing-requests/${req._id}/approve`, { billingId: savedBill._id })
+          API.post(`/billing-requests/${req._id}/approve`, {
+            billingId: savedBill._id,
+            clinicId,
+          })
         )
       );
     }
@@ -344,19 +375,19 @@ export default function Billing() {
   };
 
   const openCreate = () => { resetModal(); setModal(true); };
-  const openEdit   = (b) => {
-    loadExistingBill(b);
-    setModal(true);
-  };
+  const openEdit   = (b) => { loadExistingBill(b); setModal(true); };
 
   const statusBadge = (s) => {
-    const map = { Paid: 'badge-success', Partial: 'badge-warning', Pending: 'badge-info', Cancelled: 'badge-danger' };
+    const map = {
+      Paid: 'badge-success', Partial: 'badge-warning',
+      Pending: 'badge-info', Cancelled: 'badge-danger',
+    };
     return <span className={`badge ${map[s] || 'badge-gray'}`}>{s}</span>;
   };
 
   const pages = Math.ceil(total / 15);
 
-  // ─────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div>
       <div className="page-header">
@@ -366,8 +397,12 @@ export default function Billing() {
 
       <div className="card">
         <div className="filter-bar">
-          <select className="form-control" value={filterStatus}
-            onChange={e => { setFilterStatus(e.target.value); setPage(1); }} style={{ width: 160 }}>
+          <select
+            className="form-control"
+            value={filterStatus}
+            onChange={e => { setFilterStatus(e.target.value); setPage(1); }}
+            style={{ width: 160 }}
+          >
             <option value="">All Status</option>
             <option>Paid</option><option>Partial</option>
             <option>Pending</option><option>Cancelled</option>
@@ -398,11 +433,11 @@ export default function Billing() {
                     <td className="text-small">{b.items?.length || 0} item(s)</td>
                     <td className="text-small">
                       {b.daysAdmitted > 0
-                        ? `${b.daysAdmitted}d × ₹${(b.roomRatePerDay||0).toLocaleString()} = ₹${(b.roomRent||0).toLocaleString()}`
+                        ? `${b.daysAdmitted}d × ₹${(b.roomRatePerDay || 0).toLocaleString()} = ₹${(b.roomRent || 0).toLocaleString()}`
                         : '—'}
                     </td>
-                    <td><strong>₹{(b.totalAmount||0).toLocaleString()}</strong></td>
-                    <td>₹{(b.paidAmount||0).toLocaleString()}</td>
+                    <td><strong>₹{(b.totalAmount || 0).toLocaleString()}</strong></td>
+                    <td>₹{(b.paidAmount || 0).toLocaleString()}</td>
                     <td>{b.paymentMethod}</td>
                     <td>{statusBadge(b.paymentStatus)}</td>
                     <td>{new Date(b.createdAt).toLocaleDateString()}</td>
@@ -429,25 +464,24 @@ export default function Billing() {
 
         {pages > 1 && (
           <div className="pagination">
-            <button className="page-btn" onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1}>‹</button>
+            <button className="page-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>‹</button>
             {Array.from({ length: pages }, (_, i) => (
-              <button key={i+1} className={`page-btn ${page===i+1?'active':''}`} onClick={() => setPage(i+1)}>{i+1}</button>
+              <button key={i + 1} className={`page-btn ${page === i + 1 ? 'active' : ''}`} onClick={() => setPage(i + 1)}>{i + 1}</button>
             ))}
-            <button className="page-btn" onClick={() => setPage(p => Math.min(pages, p+1))} disabled={page===pages}>›</button>
+            <button className="page-btn" onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page === pages}>›</button>
           </div>
         )}
       </div>
 
-      {/* ── Modal ─────────────────────────────────────────────── */}
+      {/* ── Modal ──────────────────────────────────────────────────────────────── */}
       {modal && (
         <div className="modal-overlay" onClick={() => { setModal(false); resetModal(); }}>
           <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div>
                 <h3 className="modal-title" style={{ margin: 0 }}>
-                  {editId ? `Edit Bill` : 'Create Bill'}
+                  {editId ? 'Edit Bill' : 'Create Bill'}
                 </h3>
-                {/* Show bill ID + existing item count when editing */}
                 {editId && (
                   <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
                     {form.billId} ·
@@ -468,7 +502,7 @@ export default function Billing() {
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
 
-                {/* ── Existing bill notice ────────────────────── */}
+                {/* ── Existing bill notice ──────────────────────────────────── */}
                 {editId && (
                   <div style={{
                     background: '#eff6ff', border: '1px solid #bfdbfe',
@@ -485,7 +519,7 @@ export default function Billing() {
                   </div>
                 )}
 
-                {/* ── Patient Search ──────────────────────────── */}
+                {/* ── Patient Search ─────────────────────────────────────────── */}
                 <div className="form-group" ref={searchRef} style={{ position: 'relative' }}>
                   <label className="form-label">Patient *</label>
                   <div style={{ position: 'relative' }}>
@@ -496,7 +530,6 @@ export default function Billing() {
                       onChange={e => handlePatientSearch(e.target.value)}
                       onFocus={() => patientSearch && setShowDropdown(true)}
                       autoComplete="off"
-                      // Lock patient field when editing existing bill
                       readOnly={!!editId}
                       style={editId ? { background: '#f8fafc', color: '#475569' } : {}}
                     />
@@ -544,7 +577,7 @@ export default function Billing() {
                   )}
                 </div>
 
-                {/* ── Pending Lab Billing Requests Banner ──────── */}
+                {/* ── Pending Lab Billing Requests Banner ───────────────────── */}
                 {labItemsLoading && (
                   <div style={{
                     background: '#eff6ff', border: '1px solid #bfdbfe',
@@ -583,7 +616,7 @@ export default function Billing() {
                   </div>
                 )}
 
-                {/* ── Bill Items ──────────────────────────────── */}
+                {/* ── Bill Items ─────────────────────────────────────────────── */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <label className="form-label" style={{ margin: 0 }}>
                     Bill Items
@@ -629,7 +662,6 @@ export default function Billing() {
                         {form.items.map((item, idx) => (
                           <tr key={idx} style={{
                             borderBottom: '1px solid var(--border)',
-                            // Highlight newly added items with a subtle green tint
                             background: idx >= existingItemCount ? '#f0fdf4' : '#fff',
                           }}>
                             <td style={td}>
@@ -642,7 +674,7 @@ export default function Billing() {
                               <select className="form-control" style={{ fontSize: 12, padding: '4px 6px' }}
                                 value={item.category || 'Other'}
                                 onChange={e => updateItem(idx, 'category', e.target.value)}>
-                                {['Medicine','Lab','Procedure','Consultation','Other'].map(c => (
+                                {['Medicine', 'Lab', 'Procedure', 'Consultation', 'Other'].map(c => (
                                   <option key={c}>{c}</option>
                                 ))}
                               </select>
@@ -661,7 +693,7 @@ export default function Billing() {
                                 onChange={e => updateItem(idx, 'unitPrice', e.target.value)} />
                             </td>
                             <td style={{ ...td, fontWeight: 600, textAlign: 'right', paddingRight: 12 }}>
-                              ₹{(Number(item.total)||0).toLocaleString()}
+                              ₹{(Number(item.total) || 0).toLocaleString()}
                             </td>
                             <td style={td}>
                               <button type="button" onClick={() => removeItem(idx)}
@@ -676,7 +708,7 @@ export default function Billing() {
                   )}
                 </div>
 
-                {/* ── Room / Bed Rent ─────────────────────────── */}
+                {/* ── Room / Bed Rent ────────────────────────────────────────── */}
                 <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
                   <div style={{
                     background: '#fef3c7', padding: '8px 14px',
@@ -688,13 +720,13 @@ export default function Billing() {
                       <div className="form-group" style={{ margin: 0 }}>
                         <label className="form-label">Admission Date</label>
                         <input className="form-control" type="date"
-                          value={form.admissionDate ? form.admissionDate.substring(0,10) : ''}
+                          value={form.admissionDate ? form.admissionDate.substring(0, 10) : ''}
                           onChange={e => updateRoom('admissionDate', e.target.value)} />
                       </div>
                       <div className="form-group" style={{ margin: 0 }}>
                         <label className="form-label">Discharge Date</label>
                         <input className="form-control" type="date"
-                          value={form.dischargeDate ? form.dischargeDate.substring(0,10) : ''}
+                          value={form.dischargeDate ? form.dischargeDate.substring(0, 10) : ''}
                           onChange={e => updateRoom('dischargeDate', e.target.value)} />
                       </div>
                     </div>
@@ -717,14 +749,14 @@ export default function Billing() {
                       <div className="form-group" style={{ margin: 0 }}>
                         <label className="form-label">Room Rent (₹)</label>
                         <input className="form-control" readOnly
-                          value={`₹${Number(form.roomRent||0).toLocaleString()}`}
+                          value={`₹${Number(form.roomRent || 0).toLocaleString()}`}
                           style={{ fontWeight: 700, background: '#f8fafc', color: '#92400e' }} />
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* ── Discount / Tax / Payment ────────────────── */}
+                {/* ── Discount / Tax / Payment ───────────────────────────────── */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label">Discount (₹)</label>
@@ -767,20 +799,20 @@ export default function Billing() {
                   )}
                 </div>
 
-                {/* ── Bill Summary ────────────────────────────── */}
+                {/* ── Bill Summary ───────────────────────────────────────────── */}
                 <div style={{
                   background: '#f8fafc', border: '1px solid var(--border)',
                   borderRadius: 8, padding: '14px 16px',
                 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: '#1e293b' }}>Bill Summary</div>
                   {[
-                    ['Items subtotal', `₹${form.items.reduce((s,i)=>s+Number(i.total||0),0).toLocaleString()}`],
-                    [`Room rent (${form.daysAdmitted||0}d × ₹${(form.roomRatePerDay||0).toLocaleString()})`, `₹${Number(form.roomRent||0).toLocaleString()}`],
-                    ['Discount', `- ₹${Number(form.discount||0).toLocaleString()}`],
-                    [`Tax (${form.tax||0}%)`, `₹${((form.subtotal||0)*Number(form.tax||0)/100).toFixed(2)}`],
+                    ['Items subtotal', `₹${form.items.reduce((s, i) => s + Number(i.total || 0), 0).toLocaleString()}`],
+                    [`Room rent (${form.daysAdmitted || 0}d × ₹${(form.roomRatePerDay || 0).toLocaleString()})`, `₹${Number(form.roomRent || 0).toLocaleString()}`],
+                    ['Discount', `- ₹${Number(form.discount || 0).toLocaleString()}`],
+                    [`Tax (${form.tax || 0}%)`, `₹${((form.subtotal || 0) * Number(form.tax || 0) / 100).toFixed(2)}`],
                   ].map(([label, value]) => (
-                    <div key={label} style={{ display:'flex', justifyContent:'space-between', fontSize:13, marginBottom:6 }}>
-                      <span style={{ color:'#475569' }}>{label}</span>
+                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
+                      <span style={{ color: '#475569' }}>{label}</span>
                       <span>{value}</span>
                     </div>
                   ))}
@@ -791,7 +823,7 @@ export default function Billing() {
                     color: 'var(--primary)',
                   }}>
                     <span>Total Amount</span>
-                    <span>₹{Number(form.totalAmount||0).toFixed(2)}</span>
+                    <span>₹{Number(form.totalAmount || 0).toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -805,7 +837,7 @@ export default function Billing() {
 
               </div>
 
-              {/* ── Modal Footer ──────────────────────────────── */}
+              {/* ── Modal Footer ──────────────────────────────────────────────── */}
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost"
                   onClick={() => { setModal(false); resetModal(); }}>

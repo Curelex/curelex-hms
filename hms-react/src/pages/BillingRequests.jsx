@@ -2,6 +2,24 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import API from '../utils/api';
 
+// ── Resolve clinicId from stored JWT / user object ───────────────────────────
+// Must match the same helper used in Billing.jsx — adjust the key if needed.
+function getClinicId() {
+  try {
+    const raw = localStorage.getItem('user');        // change key if needed
+    if (!raw) return 'default';
+    const parsed = JSON.parse(raw);
+    return (
+      parsed.clinicId ||
+      parsed.clinic?._id ||
+      parsed.clinic ||
+      'default'
+    );
+  } catch {
+    return 'default';
+  }
+}
+
 const STATUS_COLORS = {
   Pending:  { bg: '#fffbeb', color: '#b45309', border: '#fcd34d' },
   Approved: { bg: '#f0fdf4', color: '#15803d', border: '#86efac' },
@@ -14,6 +32,8 @@ const TYPE_BADGE = {
 };
 
 export default function BillingRequests() {
+  const clinicId = getClinicId();
+
   const [requests,      setRequests]      = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [filter,        setFilter]        = useState('Pending');
@@ -25,7 +45,7 @@ export default function BillingRequests() {
   const fetchRequests = useCallback(async () => {
     setLoading(true);
     try {
-      let url = `/billing-requests?status=${filter}`;
+      let url = `/billing-requests?status=${filter}&clinicId=${clinicId}`;
       if (typeFilter) url += `&type=${typeFilter}`;
       const { data } = await API.get(url);
       setRequests(data);
@@ -34,7 +54,7 @@ export default function BillingRequests() {
     } finally {
       setLoading(false);
     }
-  }, [filter, typeFilter]);
+  }, [filter, typeFilter, clinicId]);
 
   useEffect(() => { fetchRequests(); }, [fetchRequests]);
 
@@ -42,7 +62,7 @@ export default function BillingRequests() {
   const handleApprove = async (req) => {
     setActionLoading(req._id);
     try {
-      await API.post(`/billing-requests/${req._id}/approve`);
+      await API.post(`/billing-requests/${req._id}/approve`, { clinicId });
       fetchRequests();
     } catch (err) {
       alert(err.response?.data?.message || 'Approval failed');
@@ -56,7 +76,10 @@ export default function BillingRequests() {
     if (!rejectModal) return;
     setActionLoading(rejectModal._id);
     try {
-      await API.post(`/billing-requests/${rejectModal._id}/reject`, { rejectReason });
+      await API.post(`/billing-requests/${rejectModal._id}/reject`, {
+        rejectReason,
+        clinicId,
+      });
       setRejectModal(null);
       setRejectReason('');
       fetchRequests();
@@ -71,7 +94,10 @@ export default function BillingRequests() {
     <div style={{ padding: 24 }}>
 
       {/* ── Header ─────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+        marginBottom: 24, flexWrap: 'wrap', gap: 12,
+      }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#0f172a' }}>
             Billing Requests
@@ -88,8 +114,8 @@ export default function BillingRequests() {
               <button key={val} onClick={() => setTypeFilter(val)} style={{
                 padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
                 fontWeight: 600, fontSize: 12,
-                background: typeFilter === val ? '#fff'        : 'transparent',
-                color:      typeFilter === val ? '#0f4c81'     : '#64748b',
+                background: typeFilter === val ? '#fff'    : 'transparent',
+                color:      typeFilter === val ? '#0f4c81' : '#64748b',
                 boxShadow:  typeFilter === val ? '0 1px 3px rgba(0,0,0,.1)' : 'none',
               }}>{label}</button>
             ))}
@@ -111,7 +137,10 @@ export default function BillingRequests() {
       </div>
 
       {/* ── Table ──────────────────────────────────────────────── */}
-      <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px rgba(0,0,0,.08)', overflow: 'hidden' }}>
+      <div style={{
+        background: '#fff', borderRadius: 12,
+        boxShadow: '0 1px 4px rgba(0,0,0,.08)', overflow: 'hidden',
+      }}>
         {loading ? (
           <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8' }}>Loading…</div>
         ) : requests.length === 0 ? (
@@ -123,7 +152,11 @@ export default function BillingRequests() {
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                 {['Request ID', 'Type', 'Patient', 'Items', 'Amount', 'Requested By', 'Status', 'Actions'].map(h => (
-                  <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                  <th key={h} style={{
+                    padding: '12px 16px', textAlign: 'left', fontSize: 12,
+                    fontWeight: 700, color: '#64748b',
+                    textTransform: 'uppercase', letterSpacing: '.04em',
+                  }}>
                     {h}
                   </th>
                 ))}
@@ -136,7 +169,10 @@ export default function BillingRequests() {
                 const busy = actionLoading === req._id;
 
                 return (
-                  <tr key={req._id} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                  <tr key={req._id} style={{
+                    borderBottom: '1px solid #f1f5f9',
+                    background: i % 2 === 0 ? '#fff' : '#fafafa',
+                  }}>
 
                     {/* Request ID */}
                     <td style={{ padding: '14px 16px', fontWeight: 700, color: '#0f4c81', fontSize: 13 }}>
@@ -209,13 +245,16 @@ export default function BillingRequests() {
                           }}>
                             {busy ? '…' : '✓ Approve'}
                           </button>
-                          <button onClick={() => { setRejectModal(req); setRejectReason(''); }} disabled={busy} style={{
-                            padding: '6px 14px', borderRadius: 6,
-                            border: '1px solid #fca5a5',
-                            cursor: busy ? 'not-allowed' : 'pointer',
-                            background: '#fff', color: '#dc2626',
-                            fontWeight: 600, fontSize: 12, opacity: busy ? .6 : 1,
-                          }}>
+                          <button
+                            onClick={() => { setRejectModal(req); setRejectReason(''); }}
+                            disabled={busy}
+                            style={{
+                              padding: '6px 14px', borderRadius: 6,
+                              border: '1px solid #fca5a5',
+                              cursor: busy ? 'not-allowed' : 'pointer',
+                              background: '#fff', color: '#dc2626',
+                              fontWeight: 600, fontSize: 12, opacity: busy ? .6 : 1,
+                            }}>
                             ✕ Reject
                           </button>
                         </div>
@@ -237,11 +276,18 @@ export default function BillingRequests() {
 
       {/* ── Reject modal ────────────────────────────────────────── */}
       {rejectModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: '#fff', borderRadius: 12, padding: 28, width: 420, boxShadow: '0 8px 32px rgba(0,0,0,.18)' }}>
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)',
+          zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 12, padding: 28, width: 420,
+            boxShadow: '0 8px 32px rgba(0,0,0,.18)',
+          }}>
             <h3 style={{ margin: '0 0 8px', color: '#0f172a' }}>Reject Request</h3>
             <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: 14 }}>
-              {rejectModal.type === 'Pharmacy' ? '💊' : '🧪'} {rejectModal.requestId} · Patient: <strong>{rejectModal.patientName}</strong>
+              {rejectModal.type === 'Pharmacy' ? '💊' : '🧪'} {rejectModal.requestId} · Patient:{' '}
+              <strong>{rejectModal.patientName}</strong>
             </p>
             <label style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>Reason (optional)</label>
             <textarea
@@ -249,13 +295,31 @@ export default function BillingRequests() {
               onChange={e => setRejectReason(e.target.value)}
               rows={3}
               placeholder="e.g. Duplicate entry, incorrect amount…"
-              style={{ width: '100%', marginTop: 6, padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14, resize: 'vertical', boxSizing: 'border-box' }}
+              style={{
+                width: '100%', marginTop: 6, padding: '8px 12px',
+                borderRadius: 8, border: '1px solid #d1d5db',
+                fontSize: 14, resize: 'vertical', boxSizing: 'border-box',
+              }}
             />
             <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
-              <button onClick={() => setRejectModal(null)} style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer', fontWeight: 600 }}>
+              <button
+                onClick={() => setRejectModal(null)}
+                style={{
+                  padding: '8px 20px', borderRadius: 8,
+                  border: '1px solid #d1d5db', background: '#fff',
+                  cursor: 'pointer', fontWeight: 600,
+                }}>
                 Cancel
               </button>
-              <button onClick={handleReject} disabled={!!actionLoading} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: '#dc2626', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>
+              <button
+                onClick={handleReject}
+                disabled={!!actionLoading}
+                style={{
+                  padding: '8px 20px', borderRadius: 8, border: 'none',
+                  background: '#dc2626', color: '#fff',
+                  cursor: actionLoading ? 'not-allowed' : 'pointer',
+                  fontWeight: 600, opacity: actionLoading ? .6 : 1,
+                }}>
                 {actionLoading ? 'Rejecting…' : 'Confirm Reject'}
               </button>
             </div>

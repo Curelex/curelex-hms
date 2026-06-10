@@ -1,25 +1,31 @@
+// hms-backend/models/User.js
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const UserSchema = new mongoose.Schema({
   name:       { type: String, required: true },
-  email:      { type: String, required: true, unique: true },
+  email:      { type: String, required: true },   // ✅ NOT globally unique — unique per clinic only
   password:   { type: String, required: true },
   role:       { type: String, enum: ['admin','doctor','nurse','receptionist','pharmacist','lab_technician'], default: 'receptionist' },
   department: { type: String },
   phone:      { type: String },
   isActive:   { type: Boolean, default: true },
 
-  // ── Granular module permissions ──────────────────────────────
-  // Possible values: 'dashboard','patients','appointments','billing',
-  //                  'prescriptions','pharmacy','lab','inventory','staff'
-  // Admin always gets everything (enforced in auth routes).
-  // For all other roles, only these listed modules show in sidebar + dashboard.
+  // ✅ FIX: Every user belongs to a clinic
+  clinicId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Clinic',
+    required: true,
+  },
+
   permissions: {
     type: [String],
     default: ['dashboard'],
   },
 }, { timestamps: true });
+
+// ✅ FIX: email must be unique WITHIN a clinic, not globally
+UserSchema.index({ email: 1, clinicId: 1 }, { unique: true });
 
 UserSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();

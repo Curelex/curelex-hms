@@ -6,6 +6,24 @@ import { useAuth } from '../context/AuthContext';
 import TokenDashboard from '../components/TokenDashboard';
 import inventoryService from '../services/inventoryService';
 
+// ── Resolve clinicId from stored JWT / user object ───────────────────────────
+// Adjust the localStorage key / shape to match your app's auth storage.
+function getClinicId() {
+  try {
+    const raw = localStorage.getItem('user');        // change key if needed
+    if (!raw) return 'default';
+    const parsed = JSON.parse(raw);
+    return (
+      parsed.clinicId ||
+      parsed.clinic?._id ||
+      parsed.clinic ||
+      'default'
+    );
+  } catch {
+    return 'default';
+  }
+}
+
 const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 /* ── Shared UI helpers ───────────────────────────────────────── */
@@ -59,15 +77,15 @@ function AppointmentList({ appointments }) {
   ));
 }
 
-// ── NEW: Room Summary Component ─────────────────────────────────
-function RoomSummary() {
+// ── Room Summary Component ──────────────────────────────────────
+function RoomSummary({ clinicId }) {
   const [roomConfigs, setRoomConfigs] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchRooms = async () => {
       try {
-        const { data } = await API.get('/room-settings');
+        const { data } = await API.get(`/room-settings?clinicId=${clinicId}`);
         setRoomConfigs(data);
       } catch (err) {
         console.error('Failed to fetch room stats', err);
@@ -76,7 +94,7 @@ function RoomSummary() {
       }
     };
     fetchRooms();
-  }, []);
+  }, [clinicId]);
 
   if (loading) {
     return (
@@ -88,14 +106,12 @@ function RoomSummary() {
     );
   }
 
-  if (roomConfigs.length === 0) {
-    return null;
-  }
+  if (roomConfigs.length === 0) return null;
 
-  const totalRooms = roomConfigs.reduce((sum, r) => sum + r.totalRooms, 0);
+  const totalRooms     = roomConfigs.reduce((sum, r) => sum + r.totalRooms,     0);
   const availableRooms = roomConfigs.reduce((sum, r) => sum + r.availableRooms, 0);
-  const occupiedRooms = totalRooms - availableRooms;
-  const occupancyRate = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0;
+  const occupiedRooms  = totalRooms - availableRooms;
+  const occupancyRate  = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0;
 
   const thStyle = { padding: '10px 12px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#64748b' };
   const tdStyle = { padding: '10px 12px', fontSize: 13, borderBottom: '1px solid #f1f5f9' };
@@ -104,16 +120,12 @@ function RoomSummary() {
     <div className="card" style={{ marginTop: 20 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <h3 style={{ fontSize: 15, margin: 0 }}>🏨 Hospital Room Summary</h3>
-        <button 
+        <button
           onClick={() => window.location.href = '/room-settings'}
           style={{
-            padding: '4px 12px',
-            fontSize: 11,
-            borderRadius: 20,
-            border: '1px solid #0f4c81',
-            background: 'transparent',
-            color: '#0f4c81',
-            cursor: 'pointer',
+            padding: '4px 12px', fontSize: 11, borderRadius: 20,
+            border: '1px solid #0f4c81', background: 'transparent',
+            color: '#0f4c81', cursor: 'pointer',
           }}
         >
           ⚙️ Manage Rooms
@@ -133,29 +145,27 @@ function RoomSummary() {
           </thead>
           <tbody>
             {roomConfigs.map(config => {
-              const percentage = totalRooms > 0 ? (config.availableRooms / config.totalRooms) * 100 : 0;
+              const percentage = config.totalRooms > 0
+                ? (config.availableRooms / config.totalRooms) * 100
+                : 0;
               const isFull = config.availableRooms === 0;
-              const isLow = config.availableRooms < config.totalRooms / 2;
-              
+              const isLow  = config.availableRooms < config.totalRooms / 2;
+
               return (
                 <tr key={config.roomType}>
                   <td style={tdStyle}>
                     <strong>{config.roomType}</strong>
-                    {config.roomType === 'General Ward' && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>🛏️</span>}
-                    {config.roomType === 'Semi-Private' && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>🛏️🛏️</span>}
-                    {config.roomType === 'Private Room' && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>⭐</span>}
-                    {config.roomType === 'ICU' && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>🚨</span>}
+                    {config.roomType === 'General Ward'  && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>🛏️</span>}
+                    {config.roomType === 'Semi-Private'  && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>🛏️🛏️</span>}
+                    {config.roomType === 'Private Room'  && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>⭐</span>}
+                    {config.roomType === 'ICU'           && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>🚨</span>}
                   </td>
                   <td style={tdStyle}>
                     <span style={{ fontWeight: 600, color: '#0f4c81' }}>₹{config.dailyRate.toLocaleString()}</span>
                     <span style={{ fontSize: 10, color: '#94a3b8' }}>/day</span>
                   </td>
                   <td style={tdStyle}>
-                    <span style={{ 
-                      fontWeight: 700, 
-                      color: isFull ? '#dc2626' : '#16a34a',
-                      fontSize: 14,
-                    }}>
+                    <span style={{ fontWeight: 700, color: isFull ? '#dc2626' : '#16a34a', fontSize: 14 }}>
                       {config.availableRooms}
                     </span>
                     <span style={{ fontSize: 11, color: '#94a3b8' }}> / {config.totalRooms}</span>
@@ -164,10 +174,9 @@ function RoomSummary() {
                   <td style={tdStyle}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{ width: 80, height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
-                        <div style={{ 
-                          width: `${percentage}%`, 
-                          height: '100%', 
-                          background: isFull ? '#ef4444' : isLow ? '#f59e0b' : '#10b981' 
+                        <div style={{
+                          width: `${percentage}%`, height: '100%',
+                          background: isFull ? '#ef4444' : isLow ? '#f59e0b' : '#10b981',
                         }} />
                       </div>
                       <span style={{ fontSize: 11, fontWeight: 600, color: isFull ? '#dc2626' : '#475569' }}>
@@ -192,10 +201,10 @@ function RoomSummary() {
               <td style={{ ...tdStyle, borderBottom: 'none' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ width: 80, height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ 
-                      width: `${(occupiedRooms / totalRooms) * 100}%`, 
-                      height: '100%', 
-                      background: occupancyRate > 80 ? '#ef4444' : occupancyRate > 50 ? '#f59e0b' : '#10b981'
+                    <div style={{
+                      width: `${totalRooms > 0 ? (occupiedRooms / totalRooms) * 100 : 0}%`,
+                      height: '100%',
+                      background: occupancyRate > 80 ? '#ef4444' : occupancyRate > 50 ? '#f59e0b' : '#10b981',
                     }} />
                   </div>
                   <span style={{ fontSize: 12, fontWeight: 700, color: occupancyRate > 80 ? '#dc2626' : '#475569' }}>
@@ -208,17 +217,10 @@ function RoomSummary() {
         </table>
       </div>
 
-      <div style={{ 
-        marginTop: 14, 
-        padding: '10px 14px', 
-        background: '#f8fafc', 
-        borderRadius: 8,
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: 12,
-        fontSize: 12,
+      <div style={{
+        marginTop: 14, padding: '10px 14px', background: '#f8fafc', borderRadius: 8,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        flexWrap: 'wrap', gap: 12, fontSize: 12,
       }}>
         <div style={{ display: 'flex', gap: 16 }}>
           <div>
@@ -243,50 +245,48 @@ function RoomSummary() {
 }
 
 export default function Dashboard() {
+  const clinicId = getClinicId();
+
   const [stats,   setStats]   = useState(null);
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState({
-    lowStock: [],
-    outOfStock: [],
-    dueMaintenance: [],
-    overdueMaintenance: []
+    lowStock: [], outOfStock: [], dueMaintenance: [], overdueMaintenance: [],
   });
   const { user, hasPerm } = useAuth();
 
-  // Fetch dashboard stats
+  // ── Fetch dashboard stats ─────────────────────────────────────────────────
   useEffect(() => {
-    API.get('/dashboard/stats')
+    API.get(`/dashboard/stats?clinicId=${clinicId}`)
       .then(r  => { setStats(r.data); setLoading(false); })
       .catch(() => setLoading(false));
-  }, []);
+  }, [clinicId]);
 
-  // Fetch inventory notifications (for users with inventory permission)
+  // ── Fetch inventory notifications ─────────────────────────────────────────
   useEffect(() => {
     if (hasPerm('inventory') || hasPerm('pharmacy')) {
       const fetchNotifications = async () => {
         try {
           const [lowStock, outOfStock, dueMaintenance, overdueMaintenance] = await Promise.all([
-            inventoryService.getLowStock().catch(() => ({ data: [] })),
-            inventoryService.getOutOfStock().catch(() => ({ data: [] })),
-            inventoryService.getDueMaintenance().catch(() => ({ data: [] })),
-            inventoryService.getOverdueMaintenance().catch(() => ({ data: [] }))
+            inventoryService.getLowStock(clinicId).catch(() => ({ data: [] })),
+            inventoryService.getOutOfStock(clinicId).catch(() => ({ data: [] })),
+            inventoryService.getDueMaintenance(clinicId).catch(() => ({ data: [] })),
+            inventoryService.getOverdueMaintenance(clinicId).catch(() => ({ data: [] })),
           ]);
           setNotifications({
-            lowStock: lowStock.data || [],
-            outOfStock: outOfStock.data || [],
-            dueMaintenance: dueMaintenance.data || [],
-            overdueMaintenance: overdueMaintenance.data || []
+            lowStock:            lowStock.data            || [],
+            outOfStock:          outOfStock.data          || [],
+            dueMaintenance:      dueMaintenance.data      || [],
+            overdueMaintenance:  overdueMaintenance.data  || [],
           });
         } catch (err) {
           console.error('Failed to fetch notifications:', err);
         }
       };
       fetchNotifications();
-      // Refresh every 60 seconds
       const interval = setInterval(fetchNotifications, 60000);
       return () => clearInterval(interval);
     }
-  }, [hasPerm]);
+  }, [hasPerm, clinicId]);
 
   if (loading) return <div className="spinner" />;
 
@@ -302,17 +302,17 @@ export default function Dashboard() {
     revenue: m.total,
   })) || [];
 
-  const showTokenQueue = hasPerm('patients');
+  const showTokenQueue      = hasPerm('patients');
   const showInventoryAlerts = hasPerm('inventory') || hasPerm('pharmacy');
-  const showRoomSummary = hasPerm('ipd') || hasPerm('admin'); // Show for IPD users and admins
+  const showRoomSummary     = hasPerm('ipd') || hasPerm('admin');
 
-  // Calculate alert counts
-  const totalAlerts = notifications.lowStock.length + notifications.outOfStock.length + 
-                      notifications.dueMaintenance.length + notifications.overdueMaintenance.length;
+  const totalAlerts =
+    notifications.lowStock.length + notifications.outOfStock.length +
+    notifications.dueMaintenance.length + notifications.overdueMaintenance.length;
 
   return (
     <div>
-      {/* ── Page header with notification badge ── */}
+      {/* ── Page header ── */}
       <div className="page-header">
         <div>
           <h1 className="page-title">
@@ -323,12 +323,9 @@ export default function Dashboard() {
         {showInventoryAlerts && totalAlerts > 0 && (
           <div style={{
             background: notifications.overdueMaintenance.length > 0 ? '#fee2e2' : '#fef3c7',
-            borderRadius: 30,
-            padding: '8px 18px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            border: `1px solid ${notifications.overdueMaintenance.length > 0 ? '#fca5a5' : '#fcd34d'}`
+            borderRadius: 30, padding: '8px 18px',
+            display: 'flex', alignItems: 'center', gap: 8,
+            border: `1px solid ${notifications.overdueMaintenance.length > 0 ? '#fca5a5' : '#fcd34d'}`,
           }}>
             <span style={{ fontSize: 20 }}>🔔</span>
             <div>
@@ -359,22 +356,20 @@ export default function Dashboard() {
         )}
         {showInventoryAlerts && (
           <>
-            <StatCard label="Low Stock Items" value={notifications.lowStock.length} icon="⚠️" color="#fef3c7" />
-            <StatCard label="Out of Stock" value={notifications.outOfStock.length} icon="❌" color="#fee2e2" />
+            <StatCard label="Low Stock Items" value={notifications.lowStock.length}   icon="⚠️" color="#fef3c7" />
+            <StatCard label="Out of Stock"    value={notifications.outOfStock.length} icon="❌" color="#fee2e2" />
           </>
         )}
       </div>
 
-      {/* ── ROOM SUMMARY (NEW) ── */}
-      {showRoomSummary && <RoomSummary />}
+      {/* ── Room summary ── */}
+      {showRoomSummary && <RoomSummary clinicId={clinicId} />}
 
-      {/* ── OVERDUE MAINTENANCE ALERT (CRITICAL) ── */}
+      {/* ── Overdue maintenance alert (critical) ── */}
       {showInventoryAlerts && notifications.overdueMaintenance.length > 0 && (
-        <div className="card" style={{ 
-          marginBottom: 20, 
-          background: '#fef2f2', 
-          border: '2px solid #ef4444',
-          animation: 'pulse 2s infinite'
+        <div className="card" style={{
+          marginBottom: 20, background: '#fef2f2',
+          border: '2px solid #ef4444', animation: 'pulse 2s infinite',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
             <span style={{ fontSize: 28 }}>🚨</span>
@@ -388,19 +383,18 @@ export default function Dashboard() {
           {notifications.overdueMaintenance.slice(0, 5).map(item => (
             <div key={item._id} style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '10px 0', borderBottom: '1px solid #fecaca'
+              padding: '10px 0', borderBottom: '1px solid #fecaca',
             }}>
               <div>
                 <div style={{ fontWeight: 700 }}>{item.name}</div>
                 <div className="text-muted text-small">
-                  Serial: {item.equipmentDetails?.serialNumber || 'N/A'} · 
-                  Due: {item.equipmentDetails?.nextMaintenanceDate ? new Date(item.equipmentDetails.nextMaintenanceDate).toLocaleDateString() : 'N/A'}
+                  Serial: {item.equipmentDetails?.serialNumber || 'N/A'} ·{' '}
+                  Due: {item.equipmentDetails?.nextMaintenanceDate
+                    ? new Date(item.equipmentDetails.nextMaintenanceDate).toLocaleDateString()
+                    : 'N/A'}
                 </div>
               </div>
-              <button 
-                className="btn btn-sm btn-danger"
-                onClick={() => window.location.href = '/equipment'}
-              >
+              <button className="btn btn-sm btn-danger" onClick={() => window.location.href = '/equipment'}>
                 View Equipment
               </button>
             </div>
@@ -413,7 +407,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── DUE MAINTENANCE ALERT ── */}
+      {/* ── Due maintenance alert ── */}
       {showInventoryAlerts && notifications.dueMaintenance.length > 0 && notifications.overdueMaintenance.length === 0 && (
         <div className="card" style={{ marginBottom: 20, background: '#fffbeb', border: '1px solid #fcd34d' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
@@ -427,15 +421,18 @@ export default function Dashboard() {
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {notifications.dueMaintenance.slice(0, 5).map(item => (
-              <span key={item._id} className="badge badge-warning" style={{ cursor: 'pointer' }} onClick={() => window.location.href = '/equipment'}>
-                {item.name} - Due {item.equipmentDetails?.nextMaintenanceDate ? new Date(item.equipmentDetails.nextMaintenanceDate).toLocaleDateString() : 'N/A'}
+              <span key={item._id} className="badge badge-warning" style={{ cursor: 'pointer' }}
+                onClick={() => window.location.href = '/equipment'}>
+                {item.name} - Due {item.equipmentDetails?.nextMaintenanceDate
+                  ? new Date(item.equipmentDetails.nextMaintenanceDate).toLocaleDateString()
+                  : 'N/A'}
               </span>
             ))}
           </div>
         </div>
       )}
 
-      {/* ── LOW STOCK ALERT ── */}
+      {/* ── Low stock alert ── */}
       {showInventoryAlerts && (notifications.lowStock.length > 0 || notifications.outOfStock.length > 0) && (
         <div className="card" style={{ marginBottom: 20, background: '#fefce8', border: '1px solid #fde047' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
@@ -451,19 +448,27 @@ export default function Dashboard() {
             {notifications.outOfStock.slice(0, 3).map(item => (
               <div key={item._id} style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '6px 10px', background: '#fee2e2', borderRadius: 6
+                padding: '6px 10px', background: '#fee2e2', borderRadius: 6,
               }}>
-                <span><strong>{item.name}</strong> <span className="badge badge-danger">Out of Stock</span></span>
-                <button className="btn btn-sm btn-primary" onClick={() => window.location.href = '/stock-transactions'}>Restock</button>
+                <span>
+                  <strong>{item.name}</strong> <span className="badge badge-danger">Out of Stock</span>
+                </span>
+                <button className="btn btn-sm btn-primary" onClick={() => window.location.href = '/stock-transactions'}>
+                  Restock
+                </button>
               </div>
             ))}
             {notifications.lowStock.slice(0, 5).map(item => (
               <div key={item._id} style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '6px 10px', background: '#fef3c7', borderRadius: 6
+                padding: '6px 10px', background: '#fef3c7', borderRadius: 6,
               }}>
-                <span><strong>{item.name}</strong> - Only {item.quantity} {item.unit} left (Reorder at {item.reorderLevel})</span>
-                <button className="btn btn-sm btn-outline" onClick={() => window.location.href = '/stock-transactions'}>Add Stock</button>
+                <span>
+                  <strong>{item.name}</strong> — Only {item.quantity} {item.unit} left (Reorder at {item.reorderLevel})
+                </span>
+                <button className="btn btn-sm btn-outline" onClick={() => window.location.href = '/stock-transactions'}>
+                  Add Stock
+                </button>
               </div>
             ))}
           </div>
@@ -471,7 +476,11 @@ export default function Dashboard() {
       )}
 
       {/* ── Charts ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: window.innerWidth <= 768 ? '1fr' : '1fr 1fr', gap: 20, marginTop: 20 }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: window.innerWidth <= 768 ? '1fr' : '1fr 1fr',
+        gap: 20, marginTop: 20,
+      }}>
         {hasPerm('billing') && (
           <div className="card">
             <h3 style={{ marginBottom: 16, fontSize: 15 }}>Monthly Revenue (Last 6 Months)</h3>
@@ -481,7 +490,7 @@ export default function Dashboard() {
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip formatter={v => `₹${v.toLocaleString()}`} />
-                  <Bar dataKey="revenue" fill="#0f4c81" radius={[6,6,0,0]} />
+                  <Bar dataKey="revenue" fill="#0f4c81" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
