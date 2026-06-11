@@ -559,7 +559,7 @@ function PatientRegistrationForm({ doctors, initialPatient, visits, onRegister, 
   const [form, setForm] = useState({
     name: initialPatient?.name || '',
     age: initialPatient?.age || '',
-    gender: initialPatient?.gender || 'male',
+    gender: initialPatient?.gender || 'Male',   // ✅ FIX: was 'male', now 'Male'
     phone: initialPatient?.phone || '',
     email: initialPatient?.email || '',
     address: initialPatient?.address || '',
@@ -608,10 +608,11 @@ function PatientRegistrationForm({ doctors, initialPatient, visits, onRegister, 
             <input type="text" className="form-control" placeholder="Full Name *" value={form.name} onChange={e => updateForm('name', e.target.value)} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <input type="number" className="form-control" placeholder="Age" value={form.age} onChange={e => updateForm('age', e.target.value)} />
+              {/* ✅ FIX: option values now match Patient.js enum: 'Male', 'Female', 'Other' */}
               <select className="form-control" value={form.gender} onChange={e => updateForm('gender', e.target.value)}>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="other">Other</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
               </select>
             </div>
             <PhoneInput label="" value={form.phone} onChange={v => updateForm('phone', v)} placeholder="Phone Number" />

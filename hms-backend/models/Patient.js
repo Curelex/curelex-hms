@@ -1,9 +1,16 @@
 // hms-backend/models/Patient.js
 const mongoose = require('mongoose');
 
+// ── Counter collection for atomic patientId generation ─────────────────────
+const CounterSchema = new mongoose.Schema({
+  _id:   { type: String, required: true }, // e.g. "patient_PAT00001_default"
+  seq:   { type: Number, default: 0 },
+});
+const Counter = mongoose.models.Counter || mongoose.model('Counter', CounterSchema);
+
 const PatientSchema = new mongoose.Schema({
   patientId:  { type: String, unique: true, sparse: true },
-  clinicId:   { type: String, required: true, index: true, default: 'default' }, // ← NEW
+  clinicId:   { type: String, required: true, index: true, default: 'default' },
   name:       { type: String, required: true },
   age:        { type: Number, required: true },
   gender:     { type: String, enum: ['Male', 'Female', 'Other'], required: true },
@@ -19,27 +26,22 @@ const PatientSchema = new mongoose.Schema({
   status: { type: String, enum: ['Active', 'Discharged', 'Critical'], default: 'Active' },
 }, { timestamps: true });
 
-// ── Safe patientId generation — scoped per clinic ──────────────────────────
+// ── Atomic patientId generation — no race conditions ───────────────────────
 PatientSchema.pre('save', async function (next) {
-  if (!this.patientId) {
-    try {
-      // Find the highest patientId within this clinic only
-      const last = await mongoose.model('Patient')
-        .findOne({ clinicId: this.clinicId, patientId: { $exists: true, $ne: null } })
-        .sort({ patientId: -1 })
-        .select('patientId');
+  if (this.patientId) return next(); // already assigned, skip
 
-      let nextNum = 1;
-      if (last?.patientId) {
-        const num = parseInt(last.patientId.replace('PAT', ''), 10);
-        if (!isNaN(num)) nextNum = num + 1;
-      }
-      this.patientId = 'PAT' + String(nextNum).padStart(5, '0');
-    } catch (err) {
-      return next(err);
-    }
+  try {
+    // findOneAndUpdate with upsert is atomic — no two saves get the same seq
+    const counter = await Counter.findOneAndUpdate(
+      { _id: `patient_${this.clinicId}` },   // one counter per clinic
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+    this.patientId = 'PAT' + String(counter.seq).padStart(5, '0');
+    next();
+  } catch (err) {
+    next(err);
   }
-  next();
 });
 
 module.exports = mongoose.model('Patient', PatientSchema);
