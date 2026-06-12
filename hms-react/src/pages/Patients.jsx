@@ -1,25 +1,16 @@
-// hms-react/src/pages/Patients.jsx
 import React, { useEffect, useState } from 'react';
 import API from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import PatientHistoryModal from '../components/PatientHistoryModal';
 
-// ── Resolve clinicId from stored JWT / user object ───────────────────────────
-// Adjust the localStorage key / shape to match your app's auth storage.
 function getClinicId() {
   try {
-    const raw = localStorage.getItem('user');        // change key if needed
+    const raw = localStorage.getItem('user');
     if (!raw) return 'default';
     const parsed = JSON.parse(raw);
-    return (
-      parsed.clinicId ||
-      parsed.clinic?._id ||
-      parsed.clinic ||
-      'default'
-    );
-  } catch {
-    return 'default';
-  }
+    return parsed.clinicId || parsed.clinic?._id || parsed.clinic || 'default';
+  } catch { return 'default'; }
 }
 
 const emptyForm = {
@@ -30,23 +21,27 @@ const emptyForm = {
 
 export default function Patients() {
   const clinicId = getClinicId();
-
   const { user } = useAuth();
   const navigate = useNavigate();
-
-  // Only receptionist and admin can admit
   const canAdmit = ['receptionist', 'admin'].includes(user?.role);
 
-  const [patients,    setPatients]    = useState([]);
-  const [total,       setTotal]       = useState(0);
-  const [loading,     setLoading]     = useState(true);
-  const [search,      setSearch]      = useState('');
-  const [page,        setPage]        = useState(1);
-  const [modal,       setModal]       = useState(false);
-  const [form,        setForm]        = useState(emptyForm);
-  const [editId,      setEditId]      = useState(null);
-  const [viewPatient, setViewPatient] = useState(null);
-  const [doctors,     setDoctors]     = useState([]);
+  const [patients,      setPatients]      = useState([]);
+  const [total,         setTotal]         = useState(0);
+  const [loading,       setLoading]       = useState(true);
+  const [search,        setSearch]        = useState('');
+  const [page,          setPage]          = useState(1);
+  const [modal,         setModal]         = useState(false);
+  const [form,          setForm]          = useState(emptyForm);
+  const [editId,        setEditId]        = useState(null);
+  const [viewPatient,   setViewPatient]   = useState(null);
+  const [doctors,       setDoctors]       = useState([]);
+  const [historyPatient,setHistoryPatient]= useState(null);
+
+  // ── Filters ────────────────────────────────────────────────────
+  const [filterStatus,  setFilterStatus]  = useState('');
+  const [filterDoctor,  setFilterDoctor]  = useState('');
+  const [filterGender,  setFilterGender]  = useState('');
+  const [filterBlood,   setFilterBlood]   = useState('');
 
   // ── Token state ────────────────────────────────────────────────
   const [tokenModal,    setTokenModal]    = useState(false);
@@ -55,7 +50,7 @@ export default function Patients() {
   const [tokenDoctorId, setTokenDoctorId] = useState('');
   const [tokenLoading,  setTokenLoading]  = useState(false);
 
-  // ── Admission status cache (patientId → admissionStatus) ───────
+  // ── Admission status cache ─────────────────────────────────────
   const [admittedIds, setAdmittedIds] = useState(new Set());
 
   // ── Fetch ──────────────────────────────────────────────────────
@@ -77,91 +72,86 @@ export default function Patients() {
       const { data } = await API.get(`/admissions/active?clinicId=${clinicId}`);
       const ids = new Set(data.admissions.map(a => String(a.patient?._id || a.patient)));
       setAdmittedIds(ids);
-    } catch {
-      // admissions not available for this role — ignore
-    }
+    } catch { /* ignore */ }
   };
 
-  useEffect(() => { fetchPatients(); }, [search, page]);         // eslint-disable-line
-  useEffect(() => { fetchAdmissions(); }, []);                   // eslint-disable-line
+  useEffect(() => { fetchPatients(); }, [search, page]);       // eslint-disable-line
+  useEffect(() => { fetchAdmissions(); }, []);                 // eslint-disable-line
   useEffect(() => {
     API.get(`/auth/users?clinicId=${clinicId}`)
       .then(r => setDoctors(r.data.filter(u => u.role === 'doctor')));
-  }, [clinicId]);                                                // eslint-disable-line
+  }, [clinicId]);                                              // eslint-disable-line
+
+  // ── Client-side filter logic ───────────────────────────────────
+  const filteredPatients = patients.filter(p => {
+    const isAdmitted = admittedIds.has(String(p._id));
+    const effectiveStatus = isAdmitted ? 'Admitted' : p.status;
+
+    if (filterStatus) {
+      if (filterStatus === 'Admitted' && !isAdmitted) return false;
+      if (filterStatus !== 'Admitted' && effectiveStatus !== filterStatus) return false;
+    }
+    if (filterDoctor && String(p.assignedDoctor?._id || p.assignedDoctor) !== filterDoctor) return false;
+    if (filterGender  && p.gender !== filterGender)  return false;
+    if (filterBlood   && p.bloodGroup !== filterBlood) return false;
+    return true;
+  });
+
+  const activeFiltersCount = [filterStatus, filterDoctor, filterGender, filterBlood].filter(Boolean).length;
+
+  const clearFilters = () => {
+    setFilterStatus('');
+    setFilterDoctor('');
+    setFilterGender('');
+    setFilterBlood('');
+  };
 
   // ── Submit new / edit patient ──────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     const payload = {
-      ...form,
-      clinicId,
+      ...form, clinicId,
       allergies: form.allergies ? form.allergies.split(',').map(s => s.trim()) : [],
     };
-
     if (editId) {
       await API.put(`/patients/${editId}`, payload);
-      setModal(false);
-      setForm(emptyForm);
-      setEditId(null);
-      fetchPatients();
+      setModal(false); setForm(emptyForm); setEditId(null); fetchPatients();
     } else {
       const { data: created } = await API.post('/patients', payload);
-      setModal(false);
-      setForm(emptyForm);
-      fetchPatients();
+      setModal(false); setForm(emptyForm); fetchPatients();
       setNewPatient(created);
       setTokenDoctorId(created.assignedDoctor?._id || created.assignedDoctor || '');
       setTokenModal(true);
     }
   };
 
-  // ── Generate token ─────────────────────────────────────────────
   const handleGenerateToken = async () => {
     if (!tokenDoctorId) return alert('Please select a doctor first.');
     setTokenLoading(true);
     try {
       const { data } = await API.post('/tokens/generate', {
-        doctorId:    tokenDoctorId,
-        patientId:   newPatient._id,
-        patientName: newPatient.name,
-        clinicId,
+        doctorId: tokenDoctorId, patientId: newPatient._id,
+        patientName: newPatient.name, clinicId,
       });
-      setTokenReceipt(data);
-      setTokenModal(false);
+      setTokenReceipt(data); setTokenModal(false);
     } catch (err) {
       alert(err.response?.data?.message || 'Token generation failed');
-    } finally {
-      setTokenLoading(false);
-    }
+    } finally { setTokenLoading(false); }
   };
 
-  const skipToken = () => {
-    setTokenModal(false);
-    setNewPatient(null);
-    setTokenDoctorId('');
-  };
+  const skipToken = () => { setTokenModal(false); setNewPatient(null); setTokenDoctorId(''); };
 
-  // ── Quick admit ────────────────────────────────────────────────
   const handleQuickAdmit = (p) => {
     sessionStorage.setItem('ipd_admit_patient', JSON.stringify({
-      _id:            p._id,
-      name:           p.name,
-      patientId:      p.patientId,
-      phone:          p.phone,
-      assignedDoctor: p.assignedDoctor?._id || p.assignedDoctor || '',
+      _id: p._id, name: p.name, patientId: p.patientId,
+      phone: p.phone, assignedDoctor: p.assignedDoctor?._id || p.assignedDoctor || '',
     }));
     navigate('/ipd');
   };
 
-  // ── Edit / Delete ──────────────────────────────────────────────
   const handleEdit = (p) => {
-    setForm({
-      ...p,
-      allergies: p.allergies?.join(', ') || '',
-      dob: p.dob ? p.dob.substring(0, 10) : '',
-    });
-    setEditId(p._id);
-    setModal(true);
+    setForm({ ...p, allergies: p.allergies?.join(', ') || '', dob: p.dob ? p.dob.substring(0, 10) : '' });
+    setEditId(p._id); setModal(true);
   };
 
   const handleDelete = async (id) => {
@@ -182,31 +172,119 @@ export default function Patients() {
       {/* Page header */}
       <div className="page-header">
         <h1 className="page-title">Patients</h1>
-        <button
-          className="btn btn-primary"
-          onClick={() => { setForm(emptyForm); setEditId(null); setModal(true); }}
-        >
+        <button className="btn btn-primary"
+          onClick={() => { setForm(emptyForm); setEditId(null); setModal(true); }}>
           + Add Patient
         </button>
       </div>
 
       {/* Patient table */}
       <div className="card">
-        <div className="filter-bar">
-          <div className="search-wrap">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-            <input
-              className="search-input"
-              placeholder="Search by name, ID or phone..."
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1); }}
-            />
+
+        {/* ── Search + Filters ── */}
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid #f1f5f9' }}>
+          {/* Row 1: Search bar + count */}
+          <div className="filter-bar" style={{ marginBottom: 10 }}>
+            <div className="search-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                className="search-input"
+                placeholder="Search by name, ID or phone..."
+                value={search}
+                onChange={e => { setSearch(e.target.value); setPage(1); }}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {activeFiltersCount > 0 && (
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+                  background: '#dbeafe', color: '#1e40af',
+                }}>
+                  {activeFiltersCount} filter{activeFiltersCount > 1 ? 's' : ''} active
+                </span>
+              )}
+              <div className="text-muted text-small">
+                {filteredPatients.length} of {total} patients
+              </div>
+            </div>
           </div>
-          <div className="text-muted text-small">{total} patients total</div>
+
+          {/* Row 2: Filter dropdowns */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+
+            {/* Status filter */}
+            <select
+              className="form-control"
+              style={{ width: 150, fontSize: 12 }}
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+            >
+              <option value="">All Status</option>
+              <option value="Active">✅ Active</option>
+              <option value="Admitted">🏥 Admitted (IPD)</option>
+              <option value="Discharged">🚪 Discharged</option>
+              <option value="Critical">🚨 Critical</option>
+            </select>
+
+            {/* Doctor filter */}
+            <select
+              className="form-control"
+              style={{ width: 160, fontSize: 12 }}
+              value={filterDoctor}
+              onChange={e => setFilterDoctor(e.target.value)}
+            >
+              <option value="">All Doctors</option>
+              {doctors.map(d => (
+                <option key={d._id} value={d._id}>Dr. {d.name}</option>
+              ))}
+            </select>
+
+            {/* Gender filter */}
+            <select
+              className="form-control"
+              style={{ width: 120, fontSize: 12 }}
+              value={filterGender}
+              onChange={e => setFilterGender(e.target.value)}
+            >
+              <option value="">All Genders</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+
+            {/* Blood Group filter */}
+            <select
+              className="form-control"
+              style={{ width: 120, fontSize: 12 }}
+              value={filterBlood}
+              onChange={e => setFilterBlood(e.target.value)}
+            >
+              <option value="">All Blood Groups</option>
+              {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(bg => (
+                <option key={bg} value={bg}>{bg}</option>
+              ))}
+            </select>
+
+            {/* Clear filters button */}
+            {activeFiltersCount > 0 && (
+              <button
+                onClick={clearFilters}
+                style={{
+                  padding: '6px 12px', fontSize: 12, fontWeight: 600,
+                  background: '#fee2e2', color: '#dc2626',
+                  border: '1px solid #fca5a5', borderRadius: 8,
+                  cursor: 'pointer',
+                }}
+              >
+                ✕ Clear
+              </button>
+            )}
+          </div>
         </div>
 
+        {/* ── Table ── */}
         {loading ? <div className="spinner" /> : (
           <div className="table-wrapper">
             <table>
@@ -217,9 +295,13 @@ export default function Patients() {
                 </tr>
               </thead>
               <tbody>
-                {patients.length === 0 ? (
-                  <tr><td colSpan="8" className="empty-state">No patients found</td></tr>
-                ) : patients.map(p => {
+                {filteredPatients.length === 0 ? (
+                  <tr>
+                    <td colSpan="8" className="empty-state">
+                      {activeFiltersCount > 0 ? 'No patients match the selected filters' : 'No patients found'}
+                    </td>
+                  </tr>
+                ) : filteredPatients.map(p => {
                   const isAdmitted = admittedIds.has(String(p._id));
                   return (
                     <tr key={p._id}>
@@ -239,50 +321,28 @@ export default function Patients() {
                           <span style={{
                             fontSize: 11, padding: '2px 10px', borderRadius: 20, fontWeight: 700,
                             background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d',
-                          }}>
-                            🏥 Admitted
-                          </span>
+                          }}>🏥 Admitted</span>
                         ) : statusBadge(p.status)}
                       </td>
                       <td>
                         <div className="flex gap-2">
-                          <button className="btn btn-sm btn-ghost"
-                            onClick={() => setViewPatient(p)}>View</button>
+                          <button className="btn btn-sm btn-ghost" onClick={() => setViewPatient(p)}>View</button>
                           <button className="btn btn-sm btn-outline"
-                            onClick={() => handleEdit(p)}>Edit</button>
+                            style={{ color: '#7c3aed', borderColor: '#7c3aed' }}
+                            onClick={() => setHistoryPatient(p)}>📋 History</button>
+                          <button className="btn btn-sm btn-outline" onClick={() => handleEdit(p)}>Edit</button>
 
                           {canAdmit && !isAdmitted && (
-                            <button
-                              className="btn btn-sm"
-                              style={{
-                                background: '#0f4c81', color: '#fff',
-                                border: 'none', borderRadius: 6,
-                                padding: '4px 10px', fontSize: 11, fontWeight: 600,
-                                cursor: 'pointer',
-                              }}
-                              onClick={() => handleQuickAdmit(p)}
-                            >
-                              🏥 Admit
-                            </button>
+                            <button className="btn btn-sm"
+                              style={{ background: '#0f4c81', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                              onClick={() => handleQuickAdmit(p)}>🏥 Admit</button>
                           )}
-
                           {canAdmit && isAdmitted && (
-                            <button
-                              className="btn btn-sm"
-                              style={{
-                                background: '#92400e', color: '#fff',
-                                border: 'none', borderRadius: 6,
-                                padding: '4px 10px', fontSize: 11, fontWeight: 600,
-                                cursor: 'pointer',
-                              }}
-                              onClick={() => navigate('/ipd')}
-                            >
-                              View IPD
-                            </button>
+                            <button className="btn btn-sm"
+                              style={{ background: '#92400e', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                              onClick={() => navigate('/ipd')}>View IPD</button>
                           )}
-
-                          <button className="btn btn-sm btn-danger"
-                            onClick={() => handleDelete(p._id)}>Del</button>
+                          <button className="btn btn-sm btn-danger" onClick={() => handleDelete(p._id)}>Del</button>
                         </div>
                       </td>
                     </tr>
@@ -305,7 +365,7 @@ export default function Patients() {
         )}
       </div>
 
-      {/* ── Add / Edit Patient Modal ───────────────────────────── */}
+      {/* ── Add / Edit Patient Modal ── */}
       {modal && (
         <div className="modal-overlay" onClick={() => setModal(false)}>
           <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
@@ -403,7 +463,7 @@ export default function Patients() {
         </div>
       )}
 
-      {/* ── Token Generation Prompt ──────────────────────────────── */}
+      {/* ── Token Generation Prompt ── */}
       {tokenModal && newPatient && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
@@ -411,40 +471,27 @@ export default function Patients() {
               <h3 className="modal-title">🎫 Generate Token</h3>
             </div>
             <div className="modal-body">
-              <div style={{
-                background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8,
-                padding: '10px 14px', marginBottom: 18,
-              }}>
+              <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '10px 14px', marginBottom: 18 }}>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>{newPatient.name}</div>
-                <div style={{ fontSize: 12, color: '#0369a1' }}>
-                  {newPatient.patientId} · {newPatient.phone}
-                </div>
+                <div style={{ fontSize: 12, color: '#0369a1' }}>{newPatient.patientId} · {newPatient.phone}</div>
               </div>
               <p style={{ fontSize: 13, color: '#475569', marginBottom: 14 }}>
                 Patient registered! Generate a token for their doctor visit today?
               </p>
               <div className="form-group">
                 <label className="form-label">Select Doctor *</label>
-                <select className="form-control" value={tokenDoctorId}
-                  onChange={e => setTokenDoctorId(e.target.value)}>
+                <select className="form-control" value={tokenDoctorId} onChange={e => setTokenDoctorId(e.target.value)}>
                   <option value="">— Choose Doctor —</option>
-                  {doctors.map(d => (
-                    <option key={d._id} value={d._id}>
-                      {d.name} ({d.department || 'General'})
-                    </option>
-                  ))}
+                  {doctors.map(d => <option key={d._id} value={d._id}>{d.name} ({d.department || 'General'})</option>)}
                 </select>
               </div>
               <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
-                📅 Token date: <strong>{new Date().toLocaleDateString('en-IN', {
-                  day: '2-digit', month: 'short', year: 'numeric',
-                })}</strong> — Resets at 12:00 AM
+                📅 Token date: <strong>{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</strong> — Resets at 12:00 AM
               </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={skipToken}>Skip</button>
-              <button className="btn btn-primary" onClick={handleGenerateToken}
-                disabled={tokenLoading || !tokenDoctorId}>
+              <button className="btn btn-primary" onClick={handleGenerateToken} disabled={tokenLoading || !tokenDoctorId}>
                 {tokenLoading ? 'Generating…' : '🎫 Generate Token'}
               </button>
             </div>
@@ -452,7 +499,7 @@ export default function Patients() {
         </div>
       )}
 
-      {/* ── Token Receipt Modal ───────────────────────────────────── */}
+      {/* ── Token Receipt Modal ── */}
       {tokenReceipt && (
         <div className="modal-overlay" onClick={() => setTokenReceipt(null)}>
           <div className="modal" style={{ maxWidth: 380, textAlign: 'center' }} onClick={e => e.stopPropagation()}>
@@ -460,32 +507,16 @@ export default function Patients() {
               <h3 className="modal-title">🎫 Token Generated</h3>
             </div>
             <div className="modal-body" style={{ paddingTop: 0 }}>
-              <div style={{
-                width: 100, height: 100, borderRadius: '50%',
-                background: 'linear-gradient(135deg, #0f4c81, #38bdf8)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                margin: '0 auto 20px', color: '#fff', fontSize: 42, fontWeight: 900,
-              }}>
+              <div style={{ width: 100, height: 100, borderRadius: '50%', background: 'linear-gradient(135deg, #0f4c81, #38bdf8)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', color: '#fff', fontSize: 42, fontWeight: 900 }}>
                 {tokenReceipt.tokenNumber}
               </div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: '#1e293b', marginBottom: 6 }}>
-                Token #{tokenReceipt.tokenNumber}
-              </div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#1e293b', marginBottom: 6 }}>Token #{tokenReceipt.tokenNumber}</div>
               <div style={{ fontSize: 13, color: '#475569', marginBottom: 16 }}>
                 <div>👤 <strong>{tokenReceipt.patientName}</strong></div>
-                <div>🩺 Dr. <strong>{tokenReceipt.doctor?.name}</strong>
-                  {tokenReceipt.doctor?.department ? ` · ${tokenReceipt.doctor.department}` : ''}
-                </div>
-                <div style={{ marginTop: 6 }}>
-                  📅 {new Date().toLocaleDateString('en-IN', {
-                    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
-                  })}
-                </div>
+                <div>🩺 Dr. <strong>{tokenReceipt.doctor?.name}</strong>{tokenReceipt.doctor?.department ? ` · ${tokenReceipt.doctor.department}` : ''}</div>
+                <div style={{ marginTop: 6 }}>📅 {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</div>
               </div>
-              <div style={{
-                background: '#f0fdf4', border: '1px solid #bbf7d0',
-                borderRadius: 8, padding: '8px 14px', fontSize: 12, color: '#166534',
-              }}>
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 14px', fontSize: 12, color: '#166534' }}>
                 ✅ Token resets automatically after 12:00 AM
               </div>
             </div>
@@ -496,7 +527,7 @@ export default function Patients() {
         </div>
       )}
 
-      {/* ── View Patient Modal ────────────────────────────────────── */}
+      {/* ── View Patient Modal ── */}
       {viewPatient && (
         <div className="modal-overlay" onClick={() => setViewPatient(null)}>
           <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
@@ -526,10 +557,7 @@ export default function Patients() {
               </div>
               {admittedIds.has(String(viewPatient._id)) && canAdmit && (
                 <div style={{ marginTop: 16 }}>
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => { setViewPatient(null); navigate('/ipd'); }}
-                  >
+                  <button className="btn btn-primary" onClick={() => { setViewPatient(null); navigate('/ipd'); }}>
                     🏥 Go to IPD — View Admission Details
                   </button>
                 </div>
@@ -537,6 +565,14 @@ export default function Patients() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Patient History Modal ── */}
+      {historyPatient && (
+        <PatientHistoryModal
+          patient={historyPatient}
+          onClose={() => setHistoryPatient(null)}
+        />
       )}
     </div>
   );

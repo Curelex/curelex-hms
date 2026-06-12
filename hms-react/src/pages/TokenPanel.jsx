@@ -4,6 +4,8 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import API from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import TokenActionButtons from '../components/TokenActionButtons';
+import PatientHistoryModal from '../components/PatientHistoryModal';
 
 // ── Helper Functions ─────────────────────────────────────────────
 function getTodayIST() {
@@ -84,7 +86,7 @@ function PaymentBadge({ method }) {
 export default function TokenPanel() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('queue'); // 'register' or 'queue'
-  
+
   // Data states
   const [doctors, setDoctors] = useState([]);
   const [patients, setPatients] = useState([]);
@@ -92,16 +94,17 @@ export default function TokenPanel() {
   const [summary, setSummary] = useState([]);
   const [lastRefresh, setLastRefresh] = useState('');
   const [loading, setLoading] = useState(true);
-  
+  const [historyPatient, setHistoryPatient] = useState(null);
+
   // Filter states
   const [filterDoc, setFilterDoc] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
-  
+
   // Registration states
   const [showTokenReceipt, setShowTokenReceipt] = useState(null);
   const [registerBusy, setRegisterBusy] = useState(false);
   const [registerError, setRegisterError] = useState('');
-  
+
   // Patient search for registration
   const [searchPhone, setSearchPhone] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -159,12 +162,9 @@ export default function TokenPanel() {
       setRegisterError('Please enter a valid 10-digit phone number');
       return;
     }
-    
     try {
       const { data } = await API.get(`/patients?search=${searchPhone}`);
       const matches = data.patients || [];
-      
-      // Group by name/phone to get unique patients with latest visit
       const unique = matches.reduce((acc, p) => {
         const key = `${p.phone}_${p.name?.toLowerCase()}`;
         if (!acc[key] || new Date(p.createdAt) > new Date(acc[key].createdAt)) {
@@ -172,7 +172,6 @@ export default function TokenPanel() {
         }
         return acc;
       }, {});
-      
       setSearchResults(Object.values(unique));
     } catch (err) {
       setRegisterError('Failed to search patient');
@@ -180,8 +179,8 @@ export default function TokenPanel() {
   };
 
   const getPatientVisits = (patient) => {
-    return patients.filter(p => 
-      (p.phone === patient.phone) && 
+    return patients.filter(p =>
+      (p.phone === patient.phone) &&
       (p.name?.toLowerCase() === patient.name?.toLowerCase())
     ).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   };
@@ -190,9 +189,7 @@ export default function TokenPanel() {
   const handleRegisterPatient = async (formData) => {
     setRegisterBusy(true);
     setRegisterError('');
-    
     try {
-      // First create the patient
       const { data: patient } = await API.post('/patients', {
         name: formData.name,
         age: parseInt(formData.age) || 0,
@@ -202,19 +199,15 @@ export default function TokenPanel() {
         address: formData.address || '',
         assignedDoctor: formData.doctorId,
       });
-      
-      // Generate token for the patient
       const { data: token } = await API.post('/tokens/generate', {
         doctorId: formData.doctorId,
         patientId: patient._id,
         patientName: patient.name,
       });
-      
       setShowTokenReceipt({ patient, token });
       await fetchPatients();
       await fetchTokens();
       setActiveTab('queue');
-      
     } catch (err) {
       setRegisterError(err.response?.data?.message || 'Registration failed');
     } finally {
@@ -226,19 +219,15 @@ export default function TokenPanel() {
   const handleReturningVisit = async (patient, formData) => {
     setRegisterBusy(true);
     setRegisterError('');
-    
     try {
-      // Generate token for returning patient
       const { data: token } = await API.post('/tokens/generate', {
         doctorId: formData.doctorId,
         patientId: patient._id,
         patientName: patient.name,
       });
-      
       setShowTokenReceipt({ patient, token });
       await fetchTokens();
       setActiveTab('queue');
-      
     } catch (err) {
       setRegisterError(err.response?.data?.message || 'Failed to generate token');
     } finally {
@@ -312,25 +301,25 @@ export default function TokenPanel() {
                 <h3 style={{ fontSize: 18, marginBottom: 8 }}>🔍 Find or Register Patient</h3>
                 <p style={{ color: '#64748b', fontSize: 13 }}>Search by phone number to check if patient already exists</p>
               </div>
-              
+
               <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: 200 }}>
-                  <PhoneInput 
-                    label="Phone Number" 
-                    value={searchPhone} 
-                    onChange={setSearchPhone} 
+                  <PhoneInput
+                    label="Phone Number"
+                    value={searchPhone}
+                    onChange={setSearchPhone}
                     placeholder="Enter 10-digit number"
                   />
                 </div>
-                <button 
-                  onClick={handleSearchPatient} 
+                <button
+                  onClick={handleSearchPatient}
                   className="btn btn-primary"
                   disabled={searchPhone.length !== 10}
                 >
                   Search
                 </button>
-                <button 
-                  onClick={() => setShowReturningForm(true)} 
+                <button
+                  onClick={() => setShowReturningForm(true)}
                   className="btn btn-outline"
                 >
                   + New Patient
@@ -376,7 +365,7 @@ export default function TokenPanel() {
                               </div>
                             )}
                           </div>
-                          <button 
+                          <button
                             onClick={() => {
                               setSelectedReturningPatient(patient);
                               setSelectedReturningVisits(visits);
@@ -508,17 +497,27 @@ export default function TokenPanel() {
                         </td>
                         {canUpdate && (
                           <td style={{ padding: '12px 14px' }}>
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              {t.status === 'Waiting' && (
-                                <>
-                                  <button onClick={() => updateStatus(t._id, 'Called')} className="btn btn-sm btn-primary">📢 Call</button>
-                                  <button onClick={() => updateStatus(t._id, 'Skipped')} className="btn btn-sm btn-danger">Skip</button>
-                                </>
-                              )}
-                              {t.status === 'Called' && (
-                                <button onClick={() => updateStatus(t._id, 'Done')} className="btn btn-sm btn-success">✅ Done</button>
-                              )}
-                            </div>
+                            {t.status === 'Waiting' && (
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button onClick={() => updateStatus(t._id, 'Called')} className="btn btn-sm btn-primary">📢 Call</button>
+                                <button onClick={() => updateStatus(t._id, 'Skipped')} className="btn btn-sm btn-danger">Skip</button>
+                              </div>
+                            )}
+                            {t.status === 'Called' && (
+                              <button onClick={() => updateStatus(t._id, 'Done')} className="btn btn-sm btn-success">✅ Done</button>
+                            )}
+                            {t.status === 'Done' && (
+  <TokenActionButtons
+    token={{
+      ...t,
+      patientId: t.patient,        // backend uses 'patient', modals expect 'patientId'
+      doctorId:  t.doctor,         // backend uses 'doctor', modals expect 'doctorId'
+      patientCode: t.patient?.patientId || '',
+    }}
+    clinicId={user?.clinicId || 'default'}
+    onRefresh={fetchTokens}
+  />
+)}
                           </td>
                         )}
                       </tr>
@@ -550,6 +549,14 @@ export default function TokenPanel() {
           </div>
         </div>
       )}
+
+      {/* Patient History Modal */}
+      {historyPatient && (
+        <PatientHistoryModal
+          patient={historyPatient}
+          onClose={() => setHistoryPatient(null)}
+        />
+      )}
     </div>
   );
 }
@@ -559,7 +566,7 @@ function PatientRegistrationForm({ doctors, initialPatient, visits, onRegister, 
   const [form, setForm] = useState({
     name: initialPatient?.name || '',
     age: initialPatient?.age || '',
-    gender: initialPatient?.gender || 'Male',   // ✅ FIX: was 'male', now 'Male'
+    gender: initialPatient?.gender || 'Male',
     phone: initialPatient?.phone || '',
     email: initialPatient?.email || '',
     address: initialPatient?.address || '',
@@ -570,22 +577,21 @@ function PatientRegistrationForm({ doctors, initialPatient, visits, onRegister, 
     totalFee: '',
     paid: '',
   });
-  
+
   const [localError, setLocalError] = useState('');
-  
+
   const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
-  
+
   const dues = Math.max(0, (parseFloat(form.totalFee) || 0) - (parseFloat(form.paid) || 0));
-  
+
   const handleSubmit = async () => {
     if (!form.name.trim()) { setLocalError('Patient name is required'); return; }
     if (!form.doctorId) { setLocalError('Please select a doctor'); return; }
     if (form.phone && form.phone.length !== 10) { setLocalError('Phone number must be 10 digits'); return; }
-    
     setLocalError('');
     await onRegister(initialPatient || form, form);
   };
-  
+
   return (
     <div className="card" style={{ padding: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -599,7 +605,7 @@ function PatientRegistrationForm({ doctors, initialPatient, visits, onRegister, 
         </div>
         <button onClick={onBack} className="btn btn-ghost">← Back</button>
       </div>
-      
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
         {/* Left Column - Patient Info */}
         <div>
@@ -608,7 +614,6 @@ function PatientRegistrationForm({ doctors, initialPatient, visits, onRegister, 
             <input type="text" className="form-control" placeholder="Full Name *" value={form.name} onChange={e => updateForm('name', e.target.value)} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <input type="number" className="form-control" placeholder="Age" value={form.age} onChange={e => updateForm('age', e.target.value)} />
-              {/* ✅ FIX: option values now match Patient.js enum: 'Male', 'Female', 'Other' */}
               <select className="form-control" value={form.gender} onChange={e => updateForm('gender', e.target.value)}>
                 <option value="Male">Male</option>
                 <option value="Female">Female</option>
@@ -620,7 +625,7 @@ function PatientRegistrationForm({ doctors, initialPatient, visits, onRegister, 
             <textarea className="form-control" rows={2} placeholder="Symptoms / Complaint" value={form.symptoms} onChange={e => updateForm('symptoms', e.target.value)} />
           </div>
         </div>
-        
+
         {/* Right Column - Doctor & Payment */}
         <div>
           <h4 style={{ fontSize: 14, marginBottom: 14, paddingBottom: 8, borderBottom: '1px solid #e2e8f0' }}>👨‍⚕️ Doctor & Payment</h4>
@@ -631,31 +636,31 @@ function PatientRegistrationForm({ doctors, initialPatient, visits, onRegister, 
                 <option key={doc._id} value={doc._id}>{doc.name} ({doc.department || 'General'})</option>
               ))}
             </select>
-            
+
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => updateForm('paymentMethod', 'cash')} className={`btn ${form.paymentMethod === 'cash' ? 'btn-success' : 'btn-outline'}`} style={{ flex: 1 }}>💵 Cash</button>
               <button onClick={() => updateForm('paymentMethod', 'upi')} className={`btn ${form.paymentMethod === 'upi' ? 'btn-primary' : 'btn-outline'}`} style={{ flex: 1 }}>📲 UPI</button>
             </div>
-            
+
             <input type="number" className="form-control" placeholder="Total Fee (₹)" value={form.totalFee} onChange={e => updateForm('totalFee', e.target.value)} />
             <input type="number" className="form-control" placeholder="Amount Paid (₹)" value={form.paid} onChange={e => updateForm('paid', e.target.value)} />
-            
+
             <div style={{ background: dues > 0 ? '#fef2f2' : '#f0fdf4', padding: 12, borderRadius: 8 }}>
               <div style={{ fontSize: 12, color: '#64748b' }}>Dues Remaining</div>
               <div style={{ fontSize: 24, fontWeight: 700, color: dues > 0 ? '#dc2626' : '#16a34a' }}>₹{dues.toLocaleString()}</div>
             </div>
-            
+
             <textarea className="form-control" rows={2} placeholder="Additional Notes" value={form.notes} onChange={e => updateForm('notes', e.target.value)} />
           </div>
         </div>
       </div>
-      
+
       {(error || localError) && (
         <div style={{ marginTop: 16, padding: 12, background: '#fee2e2', borderRadius: 8, color: '#dc2626', fontSize: 13 }}>
           ⚠️ {error || localError}
         </div>
       )}
-      
+
       <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
         <button onClick={onBack} className="btn btn-ghost" style={{ flex: 1 }}>Cancel</button>
         <button onClick={handleSubmit} className="btn btn-primary" style={{ flex: 1 }} disabled={busy}>
