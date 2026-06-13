@@ -3,13 +3,17 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const UserSchema = new mongoose.Schema({
-  name:       { type: String, required: true },
-  email:      { type: String, required: true },   // ✅ NOT globally unique — unique per clinic only
-  password:   { type: String, required: true },
-  role:       { type: String, enum: ['admin','doctor','nurse','receptionist','pharmacist','lab_technician'], default: 'receptionist' },
+  name: { type: String, required: true },
+  email: { type: String, required: true },   // ✅ NOT globally unique — unique per clinic only
+  password: { type: String, required: true },
+  role: { type: String, enum: ['admin', 'doctor', 'nurse', 'receptionist', 'pharmacist', 'lab_technician'], default: 'receptionist' },
   department: { type: String },
-  phone:      { type: String },
-  isActive:   { type: Boolean, default: true },
+  phone: { type: String },
+  avatar: {
+    type: String,
+    default: '',
+  },
+  isActive: { type: Boolean, default: true },
 
   // ✅ Every user belongs to a clinic
   clinicId: {

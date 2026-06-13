@@ -47,7 +47,7 @@ const ROLE_META = {
 
 export default function Layout() {
   const { user, logout, hasPerm } = useAuth();
-  
+
   const navigate = useNavigate();
   const [showConfirm, setShowConfirm] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -165,7 +165,10 @@ export default function Layout() {
         {/* User info + logout */}
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', padding: '14px 16px', }}>
           <div
-            onClick={() => navigate('/profile')}
+            onClick={() => {
+              setSidebarOpen(false);
+              navigate('/profile');
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',

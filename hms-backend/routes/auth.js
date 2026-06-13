@@ -1,20 +1,20 @@
 // hms-backend/routes/auth.js
-const express  = require('express');
-const router   = express.Router();
-const jwt      = require('jsonwebtoken');
-const crypto   = require('crypto');
+const express = require('express');
+const router = express.Router();
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const mongoose = require('mongoose');
-const User     = require('../models/User');
-const Clinic   = require('../models/Clinic');
-const auth     = require('../middleware/auth');
+const User = require('../models/User');
+const Clinic = require('../models/Clinic');
+const auth = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
 
 // Define SsoToken model locally in HMS to write to the shared IMS database
 const ssoTokenSchema = new mongoose.Schema({
-  token:     { type: String, required: true },
-  email:     { type: String, required: true },
-  clinicId:  { type: String, required: true },
-  expiresAt: { type: Date,   required: true },
+  token: { type: String, required: true },
+  email: { type: String, required: true },
+  clinicId: { type: String, required: true },
+  expiresAt: { type: Date, required: true },
 }, { timestamps: false });
 
 const SsoToken = mongoose.models.SsoToken || mongoose.model('SsoToken', ssoTokenSchema);
@@ -48,9 +48,9 @@ router.post('/register', async (req, res) => {
       role: 'admin',
       clinicId: clinic._id,           // ← key fix
       permissions: [
-        'dashboard','patients','ipd','billing',
-        'prescriptions','pharmacy','lab','inventory',
-        'room-settings','staff',
+        'dashboard', 'patients', 'ipd', 'billing',
+        'prescriptions', 'pharmacy', 'lab', 'inventory',
+        'room-settings', 'staff',
       ],
     });
 
@@ -103,7 +103,7 @@ router.post('/login', async (req, res) => {
     );
 
     const { password: _, ...userOut } = matchedUser.toObject();
-    
+
     res.json({ token, user: userOut });
   } catch (err) {
     console.error(err);
@@ -173,7 +173,7 @@ router.post('/users', auth, roleCheck('admin'), async (req, res) => {
 // ─────────────────────────────────────────────────────────────────
 router.put('/users/:id', auth, roleCheck('admin'), async (req, res) => {
   try {
-    const { password, ...fields } = req.body;
+    const { password, avatar, ...fields } = req.body;
 
     // ✅ Only allow editing users within this clinic
     const user = await User.findOne({ _id: req.params.id, clinicId: req.user.clinicId });
@@ -186,6 +186,9 @@ router.put('/users/:id', auth, roleCheck('admin'), async (req, res) => {
     }
 
     Object.assign(user, fields);
+    if (avatar !== undefined) {
+      user.avatar = avatar;
+    }
     if (password) user.password = password; // pre-save hook will hash it
 
     await user.save();
@@ -220,10 +223,10 @@ router.post('/sso-token', auth, async (req, res) => {
 
     // Generate a secure one-time token
     const token = crypto.randomBytes(32).toString('hex');
-    
+
     // Set expiration to 1 minute from now
     const expiresAt = new Date(Date.now() + 60 * 1000);
-    
+
     // Save to the shared database
     await SsoToken.create({
       token,
@@ -231,10 +234,42 @@ router.post('/sso-token', auth, async (req, res) => {
       clinicId: 'HMS_DEFAULT_CLINIC', // Default since HMS User model doesn't store clinicId
       expiresAt,
     });
-    
+
     res.status(201).json({ token });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+});
+
+router.put('/change-password', auth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const isMatch = await user.matchPassword(currentPassword);
+
+    if (!isMatch) {
+      return res.status(400).json({
+        message: 'Current password is incorrect'
+      });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.json({
+      message: 'Password updated successfully'
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      message: 'Server error'
+    });
   }
 });
 
