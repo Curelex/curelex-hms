@@ -2,10 +2,22 @@
 const express  = require('express');
 const router   = express.Router();
 const jwt      = require('jsonwebtoken');
+const crypto   = require('crypto');
+const mongoose = require('mongoose');
 const User     = require('../models/User');
 const Clinic   = require('../models/Clinic');
 const auth     = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
+
+// Define SsoToken model locally in HMS to write to the shared IMS database
+const ssoTokenSchema = new mongoose.Schema({
+  token:     { type: String, required: true },
+  email:     { type: String, required: true },
+  clinicId:  { type: String, required: true },
+  expiresAt: { type: Date,   required: true },
+}, { timestamps: false });
+
+const SsoToken = mongoose.models.SsoToken || mongoose.model('SsoToken', ssoTokenSchema);
 
 // ─────────────────────────────────────────────────────────────────
 // POST /api/auth/register
@@ -196,6 +208,33 @@ router.delete('/users/:id', auth, roleCheck('admin'), async (req, res) => {
     res.json({ message: 'Staff member removed' });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ── Generate SSO Token for IMS ─────────────────────────────────
+router.post('/sso-token', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user.isActive) return res.status(403).json({ message: 'Account is inactive' });
+
+    // Generate a secure one-time token
+    const token = crypto.randomBytes(32).toString('hex');
+    
+    // Set expiration to 1 minute from now
+    const expiresAt = new Date(Date.now() + 60 * 1000);
+    
+    // Save to the shared database
+    await SsoToken.create({
+      token,
+      email: user.email,
+      clinicId: 'HMS_DEFAULT_CLINIC', // Default since HMS User model doesn't store clinicId
+      expiresAt,
+    });
+    
+    res.status(201).json({ token });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 

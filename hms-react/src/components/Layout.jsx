@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import API from '../utils/api';
 
 // ── Nav definition ─────────────────────────────────────────────
 const NAV_SECTIONS = [
@@ -53,6 +54,20 @@ export default function Layout() {
   const isMobile = window.innerWidth <= 768;
 
   const handleLogout = () => { logout(); navigate('/login'); };
+
+  const handlePharmacySSO = async (e) => {
+    e.preventDefault();
+    try {
+      // 1. Generate SSO token from HMS backend
+      const { data } = await API.post('/auth/sso-token');
+      // 2. Redirect to IMS with the token in the URL
+      navigate(`/pharmacy?sso=${data.token}`);
+    } catch (err) {
+      console.error('SSO token generation failed', err);
+      // Fallback: navigate normally if SSO fails
+      navigate('/pharmacy');
+    }
+  };
 
   const roleMeta = ROLE_META[user?.role?.toLowerCase()] || {
     label: user?.role, color: '#94a3b8', bg: 'rgba(148,163,184,0.15)',
@@ -124,8 +139,11 @@ export default function Layout() {
               {items.map(({ path, label, icon, end }) => (
                 <NavLink
                   key={path} to={path} end={end}
-                  onClick={() => {
+                  onClick={(e) => {
                     setSidebarOpen(false);
+                    if (path === '/pharmacy') {
+                      handlePharmacySSO(e);
+                    }
                   }}
                   style={({ isActive }) => ({
                     display: 'flex', alignItems: 'center', gap: 10,

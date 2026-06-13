@@ -1,6 +1,7 @@
 import { createContext, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { getMe, login as loginApi, signup as signupApi } from "../services/authService";
+import api from "../services/api";
 
 export const AuthContext = createContext(null);
 
@@ -33,6 +34,21 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const bootstrap = async () => {
+      // ── SSO Exchange Check ──────────────────────────────────────
+      const params = new URLSearchParams(window.location.search);
+      const ssoToken = params.get("sso");
+      if (ssoToken) {
+        try {
+          // Exchange the one-time HMS token for an IMS JWT
+          const { data } = await api.post("/auth/sso-exchange", { token: ssoToken });
+          localStorage.setItem("ims_token", data.token);
+          // Remove the ?sso= token from the URL for security/cleanliness
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } catch (error) {
+          console.error("SSO exchange failed:", error?.response?.data?.message || error.message);
+        }
+      }
+      
       const token = localStorage.getItem("ims_token");
       if (!token) { setLoading(false); return; }
       try {
