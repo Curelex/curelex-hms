@@ -507,17 +507,17 @@ export default function TokenPanel() {
                               <button onClick={() => updateStatus(t._id, 'Done')} className="btn btn-sm btn-success">✅ Done</button>
                             )}
                             {t.status === 'Done' && (
-  <TokenActionButtons
-    token={{
-      ...t,
-      patientId: t.patient,        // backend uses 'patient', modals expect 'patientId'
-      doctorId:  t.doctor,         // backend uses 'doctor', modals expect 'doctorId'
-      patientCode: t.patient?.patientId || '',
-    }}
-    clinicId={user?.clinicId || 'default'}
-    onRefresh={fetchTokens}
-  />
-)}
+                              <TokenActionButtons
+                                token={{
+                                  ...t,
+                                  patientId: t.patient,
+                                  doctorId:  t.doctor,
+                                  patientCode: t.patient?.patientId || '',
+                                }}
+                                clinicId={user?.clinicId || 'default'}
+                                onRefresh={fetchTokens}
+                              />
+                            )}
                           </td>
                         )}
                       </tr>
@@ -584,6 +584,17 @@ function PatientRegistrationForm({ doctors, initialPatient, visits, onRegister, 
 
   const dues = Math.max(0, (parseFloat(form.totalFee) || 0) - (parseFloat(form.paid) || 0));
 
+  // ✅ NEW: When doctor changes, auto-fill consultation fee
+  const handleDoctorChange = (doctorId) => {
+    updateForm('doctorId', doctorId);
+    const selectedDoc = doctors.find(d => d._id === doctorId);
+    if (selectedDoc?.consultationFee && selectedDoc.consultationFee > 0) {
+      updateForm('totalFee', String(selectedDoc.consultationFee));
+    } else {
+      updateForm('totalFee', '');
+    }
+  };
+
   const handleSubmit = async () => {
     if (!form.name.trim()) { setLocalError('Patient name is required'); return; }
     if (!form.doctorId) { setLocalError('Please select a doctor'); return; }
@@ -630,20 +641,68 @@ function PatientRegistrationForm({ doctors, initialPatient, visits, onRegister, 
         <div>
           <h4 style={{ fontSize: 14, marginBottom: 14, paddingBottom: 8, borderBottom: '1px solid #e2e8f0' }}>👨‍⚕️ Doctor & Payment</h4>
           <div style={{ display: 'grid', gap: 14 }}>
-            <select className="form-control" value={form.doctorId} onChange={e => updateForm('doctorId', e.target.value)}>
-              <option value="">— Select Doctor * —</option>
-              {doctors.map(doc => (
-                <option key={doc._id} value={doc._id}>{doc.name} ({doc.department || 'General'})</option>
-              ))}
-            </select>
+
+            {/* ✅ UPDATED: Doctor select with auto-fill fee */}
+            <div>
+              <select
+                className="form-control"
+                value={form.doctorId}
+                onChange={e => handleDoctorChange(e.target.value)}
+              >
+                <option value="">— Select Doctor * —</option>
+                {doctors.map(doc => (
+                  <option key={doc._id} value={doc._id}>
+                    {doc.name} ({doc.department || 'General'})
+                    {doc.consultationFee > 0 ? ` — ₹${Number(doc.consultationFee).toLocaleString('en-IN')}` : ''}
+                  </option>
+                ))}
+              </select>
+              {/* ✅ Show fee hint when doctor with fee is selected */}
+              {form.doctorId && doctors.find(d => d._id === form.doctorId)?.consultationFee > 0 && (
+                <div style={{
+                  marginTop: 6, fontSize: 11, color: '#059669', fontWeight: 600,
+                  display: 'flex', alignItems: 'center', gap: 4,
+                }}>
+                  ✅ Consultation fee auto-filled: ₹{Number(doctors.find(d => d._id === form.doctorId)?.consultationFee).toLocaleString('en-IN')}
+                </div>
+              )}
+            </div>
 
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => updateForm('paymentMethod', 'cash')} className={`btn ${form.paymentMethod === 'cash' ? 'btn-success' : 'btn-outline'}`} style={{ flex: 1 }}>💵 Cash</button>
               <button onClick={() => updateForm('paymentMethod', 'upi')} className={`btn ${form.paymentMethod === 'upi' ? 'btn-primary' : 'btn-outline'}`} style={{ flex: 1 }}>📲 UPI</button>
             </div>
 
-            <input type="number" className="form-control" placeholder="Total Fee (₹)" value={form.totalFee} onChange={e => updateForm('totalFee', e.target.value)} />
-            <input type="number" className="form-control" placeholder="Amount Paid (₹)" value={form.paid} onChange={e => updateForm('paid', e.target.value)} />
+            {/* ✅ Total Fee — pre-filled but editable */}
+            <div style={{ position: 'relative' }}>
+              <span style={{
+                position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+                fontSize: 14, color: '#64748b', fontWeight: 600, pointerEvents: 'none', zIndex: 1,
+              }}>₹</span>
+              <input
+                type="number"
+                className="form-control"
+                placeholder="Total Fee"
+                value={form.totalFee}
+                onChange={e => updateForm('totalFee', e.target.value)}
+                style={{ paddingLeft: 26 }}
+              />
+            </div>
+
+            <div style={{ position: 'relative' }}>
+              <span style={{
+                position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+                fontSize: 14, color: '#64748b', fontWeight: 600, pointerEvents: 'none', zIndex: 1,
+              }}>₹</span>
+              <input
+                type="number"
+                className="form-control"
+                placeholder="Amount Paid"
+                value={form.paid}
+                onChange={e => updateForm('paid', e.target.value)}
+                style={{ paddingLeft: 26 }}
+              />
+            </div>
 
             <div style={{ background: dues > 0 ? '#fef2f2' : '#f0fdf4', padding: 12, borderRadius: 8 }}>
               <div style={{ fontSize: 12, color: '#64748b' }}>Dues Remaining</div>

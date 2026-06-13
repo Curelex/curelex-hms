@@ -41,6 +41,7 @@ const emptyForm = {
   name: '', email: '', password: '',
   role: 'receptionist', department: '', phone: '',
   permissions: ROLE_DEFAULTS['receptionist'],
+  consultationFee: '',   // ✅ NEW
 };
 
 const roles = ['admin','doctor','nurse','receptionist','pharmacist','lab_technician'];
@@ -187,7 +188,6 @@ export default function Staff() {
   const [workData,     setWorkData]     = useState(null);
   const [workLoading,  setWorkLoading]  = useState(false);
 
-  // ✅ FIX: backend now filters by clinicId from JWT — returns only this clinic's staff
   const fetchUsers = async () => {
     setLoading(true);
     try {
@@ -222,6 +222,8 @@ export default function Staff() {
     setForm(f => ({
       ...f, role,
       permissions: role === 'admin' ? ALL_MODULES.map(m => m.key) : (ROLE_DEFAULTS[role] || ['dashboard']),
+      // ✅ Clear consultationFee if switching away from doctor
+      consultationFee: role === 'doctor' ? f.consultationFee : '',
     }));
   };
 
@@ -252,13 +254,15 @@ export default function Staff() {
     setSaving(true); setError('');
     try {
       if (editId) {
-        // ✅ Update existing staff — backend checks clinicId ownership
         const payload = { ...form };
         if (!payload.password) delete payload.password;
+        // ✅ Only send consultationFee for doctors
+        if (payload.role !== 'doctor') delete payload.consultationFee;
         await API.put(`/auth/users/${editId}`, payload);
       } else {
-        // ✅ FIX: use /auth/users (not /auth/register) so backend attaches clinicId from JWT
-        await API.post('/auth/users', form);
+        const payload = { ...form };
+        if (payload.role !== 'doctor') delete payload.consultationFee;
+        await API.post('/auth/users', payload);
       }
       setModal(false); setForm(emptyForm); setEditId(null); setEmailTouched(false);
       fetchUsers();
@@ -274,6 +278,7 @@ export default function Staff() {
       name: u.name, email: u.email, password: '',
       role: u.role, department: u.department || '', phone: u.phone || '',
       permissions: u.permissions?.length ? u.permissions : (ROLE_DEFAULTS[u.role] || ['dashboard']),
+      consultationFee: u.consultationFee || '',   // ✅ NEW
     });
     setEditId(u._id); setError(''); setEmailTouched(false); setModal(true);
   };
@@ -399,6 +404,12 @@ export default function Staff() {
                     {workPanel.department && (
                       <span style={{ fontSize: 12, color: '#93c5fd', display: 'flex', alignItems: 'center', gap: 4 }}>
                         🏢 {workPanel.department}
+                      </span>
+                    )}
+                    {/* ✅ Show consultation fee in work panel header */}
+                    {workPanel.role === 'doctor' && workPanel.consultationFee > 0 && (
+                      <span style={{ fontSize: 12, color: '#86efac', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        💰 {fmt(workPanel.consultationFee)} / visit
                       </span>
                     )}
                   </div>
@@ -591,6 +602,32 @@ export default function Staff() {
                   <input className="form-control" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
                 </div>
 
+                {/* ✅ NEW: Consultation Fee — only shown for doctors */}
+                {form.role === 'doctor' && (
+                  <div className="form-group">
+                    <label className="form-label">Consultation Fee (₹)</label>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{
+                        position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+                        fontSize: 14, color: '#64748b', fontWeight: 600, pointerEvents: 'none',
+                      }}>₹</span>
+                      <input
+                        className="form-control"
+                        type="number"
+                        min="0"
+                        step="1"
+                        placeholder="e.g. 500"
+                        value={form.consultationFee}
+                        onChange={e => setForm({ ...form, consultationFee: e.target.value })}
+                        style={{ paddingLeft: 28 }}
+                      />
+                    </div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+                      This fee will auto-fill when this doctor is selected during patient registration
+                    </div>
+                  </div>
+                )}
+
                 {/* Module Permissions */}
                 <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--bg-secondary, #f8fafc)', borderBottom: '1px solid var(--border)' }}>
@@ -717,6 +754,12 @@ function StaffCard({ u, onWork, onEdit }) {
         <div style={css.metaRow}>
           {u.department && <span style={css.metaChip}>🏢 {u.department}</span>}
           {u.phone && <span style={css.metaChip}>📞 {u.phone}</span>}
+          {/* ✅ Show consultation fee on card for doctors */}
+          {u.role === 'doctor' && u.consultationFee > 0 && (
+            <span style={{ ...css.metaChip, background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d' }}>
+              💰 ₹{Number(u.consultationFee).toLocaleString('en-IN')}
+            </span>
+          )}
         </div>
       )}
 

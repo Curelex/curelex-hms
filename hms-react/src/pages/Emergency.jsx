@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import API from '../utils/api';
@@ -15,9 +15,9 @@ const TRIAGE_CONFIG = {
 };
 
 const BED_CONFIG = {
-  Available:     { bg: '#F0FDF4', text: '#15803D', border: '#86EFAC', icon: '●' },
-  Occupied:      { bg: '#FEF2F2', text: '#B91C1C', border: '#FCA5A5', icon: '●' },
-  Reserved:      { bg: '#FFFBEB', text: '#B45309', border: '#FCD34D', icon: '◑' },
+  Available:        { bg: '#F0FDF4', text: '#15803D', border: '#86EFAC', icon: '●' },
+  Occupied:         { bg: '#FEF2F2', text: '#B91C1C', border: '#FCA5A5', icon: '●' },
+  Reserved:         { bg: '#FFFBEB', text: '#B45309', border: '#FCD34D', icon: '◑' },
   'Under Cleaning': { bg: '#F5F3FF', text: '#6D28D9', border: '#C4B5FD', icon: '◌' },
 };
 
@@ -96,6 +96,106 @@ const styles = {
     padding: '16px 20px',
   },
 
+  // ── Patient Search ──
+  searchSection: {
+    marginBottom: '16px',
+    paddingBottom: '16px',
+    borderBottom: '1px dashed #E2E8F0',
+  },
+  searchLabel: {
+    display: 'block',
+    fontSize: '11px',
+    fontWeight: 600,
+    color: '#6366F1',
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase',
+    marginBottom: '5px',
+  },
+  searchWrapper: {
+    position: 'relative',
+  },
+  searchInput: {
+    width: '100%',
+    border: '1.5px solid #6366F1',
+    borderRadius: '8px',
+    padding: '8px 36px 8px 34px',
+    fontSize: '13px',
+    color: '#0F172A',
+    background: '#F5F3FF',
+    boxSizing: 'border-box',
+    outline: 'none',
+  },
+  searchIconLeft: {
+    position: 'absolute',
+    left: '10px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    fontSize: '14px',
+    pointerEvents: 'none',
+  },
+  searchSpinner: {
+    position: 'absolute',
+    right: '10px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    fontSize: '11px',
+    color: '#94A3B8',
+  },
+  searchDropdown: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    background: '#fff',
+    border: '1px solid #C7D2FE',
+    borderRadius: '8px',
+    boxShadow: '0 8px 24px rgba(99,102,241,0.12)',
+    zIndex: 100,
+    marginTop: '4px',
+    overflow: 'hidden',
+  },
+  searchDropdownItem: {
+    padding: '10px 14px',
+    cursor: 'pointer',
+    borderBottom: '1px solid #F1F5F9',
+    transition: 'background 0.1s',
+  },
+  searchDropdownItemHover: {
+    background: '#EEF2FF',
+  },
+  searchNoResult: {
+    padding: '12px 14px',
+    fontSize: '12px',
+    color: '#94A3B8',
+    textAlign: 'center',
+  },
+  returningBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    background: '#DCFCE7',
+    border: '1px solid #86EFAC',
+    borderRadius: '7px',
+    padding: '7px 10px',
+    fontSize: '12px',
+    color: '#166534',
+    fontWeight: 600,
+    marginBottom: '12px',
+  },
+  newPatientBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    background: '#EEF2FF',
+    border: '1px solid #C7D2FE',
+    borderRadius: '7px',
+    padding: '7px 10px',
+    fontSize: '12px',
+    color: '#4338CA',
+    fontWeight: 600,
+    marginBottom: '12px',
+  },
+
   // ── Intake Form ──
   formGroup: { marginBottom: '14px' },
   label: {
@@ -118,6 +218,17 @@ const styles = {
     boxSizing: 'border-box',
     outline: 'none',
     transition: 'border-color 0.15s',
+  },
+  inputPrefilled: {
+    width: '100%',
+    border: '1px solid #86EFAC',
+    borderRadius: '8px',
+    padding: '8px 10px',
+    fontSize: '13px',
+    color: '#0F172A',
+    background: '#F0FDF4',
+    boxSizing: 'border-box',
+    outline: 'none',
   },
   vitalsGrid: {
     display: 'grid',
@@ -370,7 +481,16 @@ const Emergency = () => {
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
-  
+
+  // ── Patient Search State ──
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [isReturningPatient, setIsReturningPatient] = useState(false);
+  const [hoveredIndex, setHoveredIndex] = useState(-1);
+  const searchDebounceRef = useRef(null);
+
   const [formData, setFormData] = useState({
     patientName: '',
     age: '',
@@ -380,12 +500,11 @@ const Emergency = () => {
     assignedDoctor: '',
   });
 
-  // Fetch doctors on mount
+  // ── Fetch Doctors ──
   useEffect(() => {
     const fetchDoctors = async () => {
       try {
         const res = await API.get('/auth/users');
-        console.log(res);
         const docs = res.data.filter(u => u.role === 'doctor');
         setDoctors(docs);
       } catch (err) {
@@ -396,53 +515,114 @@ const Emergency = () => {
   }, []);
 
   const fetchQueue = async () => {
-    try { 
-      const res = await API.get('/emergency/queue'); 
-      setQueue(res.data); 
-    } catch (err) { 
-      console.error('Error fetching queue:', err); 
+    try {
+      const res = await API.get('/emergency/queue');
+      setQueue(res.data);
+    } catch (err) {
+      console.error('Error fetching queue:', err);
     }
   };
 
   const fetchBeds = async () => {
-    try { 
-      const res = await API.get('/emergency/beds'); 
-      setBeds(res.data); 
-    } catch (err) { 
-      console.error('Error fetching beds:', err); 
+    try {
+      const res = await API.get('/emergency/beds');
+      setBeds(res.data);
+    } catch (err) {
+      console.error('Error fetching beds:', err);
     }
   };
 
   useEffect(() => {
-    fetchQueue(); 
+    fetchQueue();
     fetchBeds();
-    
     socket.on('emergencyQueueUpdated', () => fetchQueue());
     socket.on('bedStatusUpdated', () => fetchBeds());
-    
-    return () => { 
-      socket.off('emergencyQueueUpdated'); 
-      socket.off('bedStatusUpdated'); 
+    return () => {
+      socket.off('emergencyQueueUpdated');
+      socket.off('bedStatusUpdated');
     };
   }, []);
 
+  // ── Patient Search Logic ──────────────────────────────────────────────────
+  const searchPatients = async (query) => {
+    if (!query || query.trim().length < 2) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+    setSearchLoading(true);
+    try {
+      // Adjust endpoint to match your backend route for patient search
+      const res = await API.get(`/patients?search=${encodeURIComponent(query.trim())}`);
+      const results = Array.isArray(res.data) ? res.data.slice(0, 6) : [];
+      setSearchResults(results);
+      setShowDropdown(true);
+    } catch (err) {
+      console.error('Patient search failed:', err);
+      setSearchResults([]);
+      setShowDropdown(false);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setSearchQuery(val);
+    setIsReturningPatient(false);
+
+    // Debounce 300ms
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => searchPatients(val), 300);
+  };
+
+  const handleSelectPatient = (patient) => {
+    // Auto-fill form fields from existing patient record
+    setFormData(prev => ({
+      ...prev,
+      patientName: patient.name || patient.patientName || '',
+      age: patient.age ? String(patient.age) : '',
+      // Pre-fill chief complaint if patient has medical history (optional)
+      chiefComplaint: '',
+    }));
+    setSearchQuery(patient.name || patient.patientName || '');
+    setShowDropdown(false);
+    setIsReturningPatient(true);
+    setSearchResults([]);
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowDropdown(false);
+    setIsReturningPatient(false);
+    setFormData({
+      patientName: '',
+      age: '',
+      chiefComplaint: '',
+      vitals: { bloodPressure: '', heartRate: '', temperature: '', spO2: '' },
+      triageLevel: 'P3',
+      assignedDoctor: '',
+    });
+  };
+
+  // ── Form Submit ──────────────────────────────────────────────────────────
   const handleIntakeSubmit = async (e) => {
     e.preventDefault();
-    
-    // Validation
+
     if (!formData.assignedDoctor) {
       setErrorMsg('Please select a doctor');
       setTimeout(() => setErrorMsg(''), 3000);
       return;
     }
-    
+
     setLoading(true);
     setErrorMsg('');
     setSuccessMsg('');
-    
+
     try {
       const selectedDoctor = doctors.find(d => d._id === formData.assignedDoctor);
-      
+
       const payload = {
         patientName: formData.patientName,
         age: parseInt(formData.age) || 0,
@@ -451,13 +631,14 @@ const Emergency = () => {
         triageLevel: formData.triageLevel,
         assignedDoctor: formData.assignedDoctor,
         doctorName: selectedDoctor?.name || '',
+        isReturningPatient,
       };
-      
-      await axios.post('/api/emergency/intake', payload);
-      
-      setSuccessMsg(`✅ Patient admitted and Dr. ${selectedDoctor?.name} notified`);
-      
-      // Reset form
+
+      await API.post('/emergency/intake', payload);
+
+      setSuccessMsg(`✅ Patient admitted — Dr. ${selectedDoctor?.name} notified`);
+
+      // Reset form + search
       setFormData({
         patientName: '',
         age: '',
@@ -466,10 +647,11 @@ const Emergency = () => {
         triageLevel: 'P3',
         assignedDoctor: '',
       });
-      
+      setSearchQuery('');
+      setIsReturningPatient(false);
+
       setTimeout(() => setSuccessMsg(''), 5000);
-      
-    } catch (err) { 
+    } catch (err) {
       console.error(err);
       setErrorMsg(err.response?.data?.message || 'Failed to admit patient');
       setTimeout(() => setErrorMsg(''), 5000);
@@ -504,11 +686,110 @@ const Emergency = () => {
             <h2 style={styles.cardTitle}>Rapid Intake</h2>
           </div>
           <div style={styles.cardBody}>
+
+            {/* ── Patient Lookup Search ── */}
+            <div style={styles.searchSection}>
+              <label style={styles.searchLabel}>🔎 Search Existing Patient</label>
+              <div style={styles.searchWrapper}>
+                <span style={styles.searchIconLeft}>👤</span>
+                <input
+                  type="text"
+                  placeholder="Type patient name to check records…"
+                  style={styles.searchInput}
+                  value={searchQuery}
+                  onChange={handleSearchChange}
+                  onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowDropdown(false), 180)}
+                  autoComplete="off"
+                />
+                {searchLoading && (
+                  <span style={styles.searchSpinner}>searching…</span>
+                )}
+                {searchQuery && !searchLoading && (
+                  <span
+                    style={{ ...styles.searchSpinner, cursor: 'pointer', color: '#94A3B8', fontSize: '16px' }}
+                    onMouseDown={handleClearSearch}
+                    title="Clear"
+                  >×</span>
+                )}
+
+                {/* Dropdown Results */}
+                {showDropdown && (
+                  <div style={styles.searchDropdown}>
+                    {searchResults.length === 0 ? (
+                      <div style={styles.searchNoResult}>
+                        No existing patient found — will register as new
+                      </div>
+                    ) : (
+                      searchResults.map((p, i) => (
+                        <div
+                          key={p._id || i}
+                          style={{
+                            ...styles.searchDropdownItem,
+                            background: hoveredIndex === i ? '#EEF2FF' : (i % 2 === 0 ? '#FAFAFA' : '#fff'),
+                          }}
+                          onMouseEnter={() => setHoveredIndex(i)}
+                          onMouseLeave={() => setHoveredIndex(-1)}
+                          onMouseDown={() => handleSelectPatient(p)}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <strong style={{ color: '#0F172A', fontSize: '13px' }}>
+                                {p.name || p.patientName}
+                              </strong>
+                              <span style={{ color: '#94A3B8', fontSize: '12px', marginLeft: '6px' }}>
+                                {p.age}y
+                              </span>
+                              {p.phone && (
+                                <span style={{ color: '#94A3B8', fontSize: '11px', marginLeft: '6px' }}>
+                                  • {p.phone}
+                                </span>
+                              )}
+                            </div>
+                            <span style={{
+                              background: '#EEF2FF',
+                              color: '#4338CA',
+                              fontSize: '10px',
+                              fontWeight: 700,
+                              padding: '2px 7px',
+                              borderRadius: '999px',
+                            }}>
+                              Existing
+                            </span>
+                          </div>
+                          {p.bloodGroup && (
+                            <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
+                              Blood Group: {p.bloodGroup}
+                              {p.lastVisit && ` · Last visit: ${new Date(p.lastVisit).toLocaleDateString()}`}
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Status Badge */}
+              {isReturningPatient && (
+                <div style={{ ...styles.returningBadge, marginTop: '10px' }}>
+                  ✅ Returning patient — form pre-filled from records
+                </div>
+              )}
+              {searchQuery && !isReturningPatient && searchQuery.length >= 2 && !searchLoading && !showDropdown && searchResults.length === 0 && (
+                <div style={{ ...styles.newPatientBadge, marginTop: '10px' }}>
+                  🆕 New patient — fill in details below
+                </div>
+              )}
+            </div>
+
+            {/* ── Intake Form ── */}
             <form onSubmit={handleIntakeSubmit}>
               <div style={styles.formGroup}>
                 <label style={styles.label}>Patient Name *</label>
                 <input
-                  type="text" required style={styles.input}
+                  type="text" required
+                  style={isReturningPatient ? styles.inputPrefilled : styles.input}
                   placeholder="Full name"
                   value={formData.patientName}
                   onChange={e => setFormData({ ...formData, patientName: e.target.value })}
@@ -518,7 +799,8 @@ const Emergency = () => {
               <div style={styles.formGroup}>
                 <label style={styles.label}>Age *</label>
                 <input
-                  type="number" required style={styles.input}
+                  type="number" required
+                  style={isReturningPatient ? styles.inputPrefilled : styles.input}
                   placeholder="Years"
                   value={formData.age}
                   onChange={e => setFormData({ ...formData, age: e.target.value })}
@@ -528,7 +810,8 @@ const Emergency = () => {
               <div style={styles.formGroup}>
                 <label style={styles.label}>Chief Complaint *</label>
                 <textarea
-                  required rows={2} style={{ ...styles.input, resize: 'none' }}
+                  required rows={2}
+                  style={{ ...styles.input, resize: 'none' }}
                   placeholder="Describe presenting complaint…"
                   value={formData.chiefComplaint}
                   onChange={e => setFormData({ ...formData, chiefComplaint: e.target.value })}
@@ -539,10 +822,10 @@ const Emergency = () => {
                 <label style={styles.label}>Vitals</label>
                 <div style={styles.vitalsGrid}>
                   {[
-                    { key: 'bloodPressure', label: 'BP', unit: 'mmHg', ph: '120/80' },
-                    { key: 'heartRate',     label: 'HR', unit: 'bpm',  ph: '72'     },
-                    { key: 'temperature',   label: 'Temp', unit: '°F', ph: '98.6'   },
-                    { key: 'spO2',          label: 'SpO2', unit: '%',  ph: '98'     },
+                    { key: 'bloodPressure', label: 'BP',   unit: 'mmHg', ph: '120/80' },
+                    { key: 'heartRate',     label: 'HR',   unit: 'bpm',  ph: '72'     },
+                    { key: 'temperature',   label: 'Temp', unit: '°F',   ph: '98.6'   },
+                    { key: 'spO2',          label: 'SpO2', unit: '%',    ph: '98'     },
                   ].map(({ key, label, unit, ph }) => (
                     <div style={styles.vitalBox} key={key}>
                       <div style={styles.vitalLabel}>{label} <span style={{ fontWeight: 400, opacity: 0.7 }}>{unit}</span></div>
@@ -559,8 +842,7 @@ const Emergency = () => {
               <div style={styles.formGroup}>
                 <label style={styles.label}>Triage Level *</label>
                 <select
-                  required
-                  style={styles.select}
+                  required style={styles.select}
                   value={formData.triageLevel}
                   onChange={e => setFormData({ ...formData, triageLevel: e.target.value })}
                 >
@@ -572,12 +854,10 @@ const Emergency = () => {
                 </select>
               </div>
 
-              {/* ─── NEW: Doctor Selection Field ─────────────────── */}
               <div style={styles.formGroup}>
                 <label style={styles.label}>Assign Doctor *</label>
                 <select
-                  required
-                  style={styles.select}
+                  required style={styles.select}
                   value={formData.assignedDoctor}
                   onChange={e => setFormData({ ...formData, assignedDoctor: e.target.value })}
                 >
@@ -590,16 +870,16 @@ const Emergency = () => {
                 </select>
               </div>
 
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 style={loading ? styles.submitBtnDisabled : styles.submitBtn}
                 disabled={loading}
               >
-                {loading ? 'Processing...' : '＋ Admit to Emergency'}
+                {loading ? 'Processing…' : '＋ Admit to Emergency'}
               </button>
-              
+
               {successMsg && <div style={styles.successMsg}>{successMsg}</div>}
-              {errorMsg && <div style={styles.errorMsg}>{errorMsg}</div>}
+              {errorMsg   && <div style={styles.errorMsg}>{errorMsg}</div>}
             </form>
           </div>
         </div>
@@ -675,15 +955,17 @@ const Emergency = () => {
                     const cfg = BED_CONFIG[bed.status] || BED_CONFIG['Under Cleaning'];
                     return (
                       <div key={bed._id} style={styles.bedCard(bed.status)}>
-                        <div style={styles.bedNumber}>{bed.roomNumber ? `${bed.roomNumber} - ${bed.bedNumber}` : bed.bedNumber}</div>
+                        <div style={styles.bedNumber}>
+                          {bed.roomNumber ? `${bed.roomNumber} - ${bed.bedNumber}` : bed.bedNumber}
+                        </div>
                         <div style={styles.bedStatus(bed.status)}>
                           <span style={{ fontSize: '8px' }}>{cfg.icon}</span>
                           <select
                             value={bed.status}
                             onChange={async (e) => {
                               try {
-                                await axios.put(`/api/emergency/beds/${bed._id}/status`, { status: e.target.value });
-                                fetchBeds(); // Refresh UI
+                                await API.put(`/emergency/beds/${bed._id}/status`, { status: e.target.value });
+                                fetchBeds();
                               } catch (err) {
                                 console.error('Error updating bed status:', err);
                               }

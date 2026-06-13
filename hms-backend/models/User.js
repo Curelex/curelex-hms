@@ -11,7 +11,7 @@ const UserSchema = new mongoose.Schema({
   phone:      { type: String },
   isActive:   { type: Boolean, default: true },
 
-  // ✅ FIX: Every user belongs to a clinic
+  // ✅ Every user belongs to a clinic
   clinicId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Clinic',
@@ -22,9 +22,17 @@ const UserSchema = new mongoose.Schema({
     type: [String],
     default: ['dashboard'],
   },
+
+  // ✅ NEW: Consultation fee — only relevant for doctors
+  // Shown in doctor dropdown during patient registration and auto-fills totalFee
+  consultationFee: {
+    type: Number,
+    default: 0,
+  },
+
 }, { timestamps: true });
 
-// ✅ FIX: email must be unique WITHIN a clinic, not globally
+// ✅ email must be unique WITHIN a clinic, not globally
 UserSchema.index({ email: 1, clinicId: 1 }, { unique: true });
 
 UserSchema.pre('save', async function (next) {
