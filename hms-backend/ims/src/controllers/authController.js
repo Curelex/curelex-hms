@@ -81,7 +81,6 @@ export const ssoExchange = asyncHandler(async (req, res) => {
 
   let user = await User.findOne({ email: record.email });
 
-  // ── Auto-create IMS user on first SSO login ──
   if (!user) {
     const role = record.role === "admin" ? ROLES.ADMIN : ROLES.STAFF;
     user = await User.create({
@@ -93,12 +92,22 @@ export const ssoExchange = asyncHandler(async (req, res) => {
       clinicId: record.clinicId || null,
       isActive: true,
     });
+  } else if (user.role !== ROLES.ADMIN) {
+    // Sync IMS-format permissions for any non-admin (incl. legacy HMS roles)
+    // using updateOne to avoid full-document validation on legacy fields
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { permissions: STAFF_PERMISSIONS.SALES_BILLING } }
+    );
+    user.permissions = STAFF_PERMISSIONS.SALES_BILLING;
   }
 
-  // ── Stamp clinicId onto IMS user if missing ──
   if (record.clinicId && !user.clinicId) {
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { clinicId: String(record.clinicId) } }
+    );
     user.clinicId = String(record.clinicId);
-    await user.save();
   }
 
   const imsToken = signToken(user._id, user.clinicId);

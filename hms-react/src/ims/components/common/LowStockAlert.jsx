@@ -1,33 +1,37 @@
+// hms-react/src/components/common/LowStockAlert.jsx
+// Kept for backward compatibility but DashboardPage now renders its own inline alert.
+// This component is still usable on other pages if needed.
+
 const LowStockAlert = ({ items }) => {
   if (!items || items.length === 0) return null;
 
   return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-      <div className="flex items-start gap-3">
-        <span className="mt-0.5 text-amber-600">⚠</span>
-        <div>
-          <p className="text-sm font-semibold text-amber-800">
-            Low / Out of Stock Alert — {items.length} product{items.length !== 1 ? "s" : ""} need attention
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {items.map((entry, i) => {
-              const product = entry.product || {};
-              const isOut = entry.quantity === 0;
-              return (
-                <span
-                  key={i}
-                  className={`rounded-full px-3 py-0.5 text-xs font-medium ${
-                    isOut
-                      ? "bg-red-100 text-red-700"
-                      : "bg-amber-100 text-amber-700"
-                  }`}
-                >
-                  {product.name || "Unknown"} — {entry.quantity} left
-                  {isOut ? " (OUT)" : ""}
-                </span>
-              );
-            })}
-          </div>
+    <div style={{
+      padding: "12px 18px", borderRadius: 12,
+      background: "rgba(217,119,6,0.07)", border: "1.5px solid rgba(217,119,6,0.25)",
+      display: "flex", alignItems: "flex-start", gap: 12,
+      fontFamily: "'Inter','Segoe UI',sans-serif",
+    }}>
+      <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>⚠️</span>
+      <div style={{ flex: 1 }}>
+        <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: "#92400e" }}>
+          {items.length} product{items.length !== 1 ? "s" : ""} need attention
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {items.map((entry, i) => {
+            const name  = entry.product?.name || entry.name || "Unknown";
+            const qty   = entry.quantity ?? 0;
+            const isOut = qty === 0;
+            return (
+              <span key={i} style={{
+                padding: "2px 9px", borderRadius: 20, fontSize: 11, fontWeight: 600,
+                background: isOut ? "rgba(220,38,38,0.1)" : "rgba(217,119,6,0.12)",
+                color: isOut ? "#dc2626" : "#b45309",
+              }}>
+                {name} — {qty} left{isOut ? " (OUT)" : ""}
+              </span>
+            );
+          })}
         </div>
       </div>
     </div>
