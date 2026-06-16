@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import TokenDashboard from '../components/TokenDashboard';
 import inventoryService from '../services/inventoryService';
 import { io } from 'socket.io-client';
+import { useNavigate } from 'react-router-dom';
 const socket = io('http://localhost:5000');
 
 // ── Resolve clinicId from stored JWT / user object ───────────────────────────
@@ -26,7 +27,7 @@ function getClinicId() {
   }
 }
 
-const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /* ── Shared UI helpers ───────────────────────────────────────── */
 function StatCard({ label, value, icon, color }) {
@@ -110,10 +111,10 @@ function RoomSummary({ clinicId }) {
 
   if (roomConfigs.length === 0) return null;
 
-  const totalRooms     = roomConfigs.reduce((sum, r) => sum + r.totalRooms,     0);
+  const totalRooms = roomConfigs.reduce((sum, r) => sum + r.totalRooms, 0);
   const availableRooms = roomConfigs.reduce((sum, r) => sum + r.availableRooms, 0);
-  const occupiedRooms  = totalRooms - availableRooms;
-  const occupancyRate  = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0;
+  const occupiedRooms = totalRooms - availableRooms;
+  const occupancyRate = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0;
 
   const thStyle = { padding: '10px 12px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#64748b' };
   const tdStyle = { padding: '10px 12px', fontSize: 13, borderBottom: '1px solid #f1f5f9' };
@@ -151,16 +152,16 @@ function RoomSummary({ clinicId }) {
                 ? (config.availableRooms / config.totalRooms) * 100
                 : 0;
               const isFull = config.availableRooms === 0;
-              const isLow  = config.availableRooms < config.totalRooms / 2;
+              const isLow = config.availableRooms < config.totalRooms / 2;
 
               return (
                 <tr key={config.roomType}>
                   <td style={tdStyle}>
                     <strong>{config.roomType}</strong>
-                    {config.roomType === 'General Ward'  && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>🛏️</span>}
-                    {config.roomType === 'Semi-Private'  && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>🛏️🛏️</span>}
-                    {config.roomType === 'Private Room'  && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>⭐</span>}
-                    {config.roomType === 'ICU'           && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>🚨</span>}
+                    {config.roomType === 'General Ward' && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>🛏️</span>}
+                    {config.roomType === 'Semi-Private' && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>🛏️🛏️</span>}
+                    {config.roomType === 'Private Room' && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>⭐</span>}
+                    {config.roomType === 'ICU' && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>🚨</span>}
                   </td>
                   <td style={tdStyle}>
                     <span style={{ fontWeight: 600, color: '#0f4c81' }}>₹{(config.dailyRate || 0).toLocaleString()}</span>
@@ -249,17 +250,18 @@ function RoomSummary({ clinicId }) {
 export default function Dashboard() {
   const clinicId = getClinicId();
 
-  const [stats,   setStats]   = useState(null);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState({
     lowStock: [], outOfStock: [], dueMaintenance: [], overdueMaintenance: [],
   });
   const { user, hasPerm } = useAuth();
+  const navigate = useNavigate();
 
   // ── Fetch dashboard stats ─────────────────────────────────────────────────
   useEffect(() => {
     API.get(`/dashboard/stats?clinicId=${clinicId}`)
-      .then(r  => { setStats(r.data); setLoading(false); })
+      .then(r => { setStats(r.data); setLoading(false); })
       .catch(() => setLoading(false));
   }, [clinicId]);
 
@@ -275,10 +277,10 @@ export default function Dashboard() {
             inventoryService.getOverdueMaintenance(clinicId).catch(() => ({ data: [] })),
           ]);
           setNotifications({
-            lowStock:            lowStock.data            || [],
-            outOfStock:          outOfStock.data          || [],
-            dueMaintenance:      dueMaintenance.data      || [],
-            overdueMaintenance:  overdueMaintenance.data  || [],
+            lowStock: lowStock.data || [],
+            outOfStock: outOfStock.data || [],
+            dueMaintenance: dueMaintenance.data || [],
+            overdueMaintenance: overdueMaintenance.data || [],
           });
         } catch (err) {
           console.error('Failed to fetch notifications:', err);
@@ -293,7 +295,10 @@ export default function Dashboard() {
   if (loading) return <div className="spinner" />;
 
   const permList = user?.permissions || [];
-  const subtitle = user?.role === 'admin'
+  const subtitle 
+  = user?.role === 'pharmacist'
+    ? 'Manage pharmacy inventory and monitor stock alerts.'
+    : user?.role === 'admin'
     ? 'Full system overview — you have complete access.'
     : permList.length <= 1
       ? 'Welcome! Contact admin to grant you module access.'
@@ -304,9 +309,9 @@ export default function Dashboard() {
     revenue: m.total,
   })) || [];
 
-  const showTokenQueue      = hasPerm('patients');
+  const showTokenQueue = hasPerm('patients');
   const showInventoryAlerts = hasPerm('inventory') || hasPerm('pharmacy');
-  const showRoomSummary     = hasPerm('ipd') || hasPerm('admin');
+  const showRoomSummary = hasPerm('ipd') || hasPerm('admin');
 
   const totalAlerts =
     notifications.lowStock.length + notifications.outOfStock.length +
@@ -347,7 +352,7 @@ export default function Dashboard() {
       <div className="stat-grid">
         {hasPerm('patients') && (
           <>
-            <StatCard label="Total Patients"  value={stats?.totalPatients  || 0} icon="👤" color="#dbeafe" />
+            <StatCard label="Total Patients" value={stats?.totalPatients || 0} icon="👤" color="#dbeafe" />
             <StatCard label="Active Patients" value={stats?.activePatients || 0} icon="🟢" color="#d1fae5" />
           </>
         )}
@@ -359,12 +364,231 @@ export default function Dashboard() {
         )}
         {showInventoryAlerts && (
           <>
-            <StatCard label="Low Stock Items" value={notifications.lowStock.length}   icon="⚠️" color="#fef3c7" />
-            <StatCard label="Out of Stock"    value={notifications.outOfStock.length} icon="❌" color="#fee2e2" />
+            <StatCard label="Low Stock Items" value={notifications.lowStock.length} icon="⚠️" color="#fef3c7" />
+            <StatCard label="Out of Stock" value={notifications.outOfStock.length} icon="❌" color="#fee2e2" />
           </>
         )}
       </div>
 
+
+
+      {user?.role === 'pharmacist' && (
+        <div>
+
+          <div className="card" style={{ marginBottom: 20 }}>
+            <h3 style={{ marginBottom: 16 }}>📊 Today's Overview</h3>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns:
+                  window.innerWidth <= 768
+                    ? '1fr 1fr'
+                    : 'repeat(4, 1fr)',
+                gap: 16,
+              }}
+            >
+              <div className="stat-card">
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    width: '100%',
+                    height: '100%',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Total Medicines
+                  </span>
+
+                  <span
+                    style={{
+                      marginLeft: 'auto',
+                      fontSize: 32,
+                      fontWeight: 700,
+                      color: '#0f4c81',
+                    }}
+                  >
+                    {stats.totalMeds || 0}
+                  </span>
+                </div>
+              </div>
+
+
+              <div className="stat-card">
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    width: '100%',
+                    height: '100%',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Low Stock
+                  </span>
+
+                  <span
+                    style={{
+                      marginLeft: 'auto',
+                      fontSize: 32,
+                      fontWeight: 700,
+                      color: '#f59e0b',
+                    }}
+                  >
+                    {stats.lowStockItems || 0}
+                  </span>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    width: '100%',
+                    height: '100%',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Out of Stock
+                  </span>
+
+                  <span
+                    style={{
+                      marginLeft: 'auto',
+                      fontSize: 32,
+                      fontWeight: 700,
+                      color: '#ef4444',
+                    }}
+                  >
+                    {stats.outOfStock || 0}
+                  </span>
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    width: '100%',
+                    height: '100%',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Pending Orders
+                  </span>
+
+                  <span
+                    style={{
+                      marginLeft: 'auto',
+                      fontSize: 32,
+                      fontWeight: 700,
+                      color: '#0f4c81',
+                    }}
+                  >
+                    {stats.pendingOrders || 0}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Recent Activity ── */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <h3 style={{ marginBottom: 16 }}>
+              🕒 Recent Inventory Activity
+            </h3>
+
+            {stats?.lowStockMeds
+              ?.filter((item) => item.category === 'Medicine')
+              ?.slice(0, 5)
+              ?.map((item) => (
+                <div
+                  key={item._id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '10px 0',
+                    borderBottom: '1px solid #e5e7eb',
+                  }}
+                >
+                  <div>
+                    <strong>💊 {item.name}</strong>
+
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: '#64748b',
+                        marginTop: 4,
+                      }}
+                    >
+                      📦 Available Units: {item.quantity}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: '#94a3b8',
+                        marginTop: 4,
+                      }}
+                    >
+                      🕒 Updated: {new Date(item.updatedAt).toLocaleDateString()}
+                    </div>
+                  </div>
+
+                  <span
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '999px',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      background:
+                        item.stockStatus === 'Out of Stock'
+                          ? '#fee2e2'
+                          : item.stockStatus === 'Low Stock'
+                            ? '#fef3c7'
+                            : '#dcfce7',
+                      color:
+                        item.stockStatus === 'Out of Stock'
+                          ? '#dc2626'
+                          : item.stockStatus === 'Low Stock'
+                            ? '#d97706'
+                            : '#16a34a',
+                    }}
+                  >
+                    {item.stockStatus}
+                  </span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
       {/* ── Room summary ── */}
       {showRoomSummary && <RoomSummary clinicId={clinicId} />}
 
@@ -519,91 +743,91 @@ export default function Dashboard() {
 // components/DoctorEmergencyAlerts.jsx - NEW COMPONENT
 
 function DoctorEmergencyAlerts() {
-    const { user } = useAuth();
-    const [alerts, setAlerts] = useState([]);
-    const [unreadCount, setUnreadCount] = useState(0);
+  const { user } = useAuth();
+  const [alerts, setAlerts] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-    useEffect(() => {
-        if (user?.role !== 'doctor') return;
-        
-        // Join doctor's room
-        socket.emit('doctor:join', user._id);
-        
-        // Listen for emergency assignments
-        socket.on('emergencyAssigned', (notification) => {
-            setAlerts(prev => [notification, ...prev]);
-            setUnreadCount(prev => prev + 1);
-            
-            // Browser notification
-            if (Notification.permission === 'granted') {
-                new Notification(notification.message, {
-                    body: `${notification.patientName} - ${notification.chiefComplaint}`,
-                    icon: '/emergency-icon.png',
-                });
-            } else if (Notification.permission !== 'denied') {
-                Notification.requestPermission();
-            }
+  useEffect(() => {
+    if (user?.role !== 'doctor') return;
+
+    // Join doctor's room
+    socket.emit('doctor:join', user._id);
+
+    // Listen for emergency assignments
+    socket.on('emergencyAssigned', (notification) => {
+      setAlerts(prev => [notification, ...prev]);
+      setUnreadCount(prev => prev + 1);
+
+      // Browser notification
+      if (Notification.permission === 'granted') {
+        new Notification(notification.message, {
+          body: `${notification.patientName} - ${notification.chiefComplaint}`,
+          icon: '/emergency-icon.png',
         });
-        
-        return () => {
-            socket.off('emergencyAssigned');
-        };
-    }, [user]);
+      } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission();
+      }
+    });
 
-    if (alerts.length === 0) return null;
+    return () => {
+      socket.off('emergencyAssigned');
+    };
+  }, [user]);
 
-    return (
-        <div className="card" style={{ 
-            marginBottom: 20, 
-            border: '2px solid #dc2626',
-            background: '#fef2f2',
-        }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid #fecaca' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 20 }}>🚨</span>
-                    <span style={{ fontWeight: 700, color: '#991b1b' }}>
-                        Emergency Alerts ({unreadCount} new)
-                    </span>
-                    {unreadCount > 0 && (
-                        <button 
-                            onClick={() => setUnreadCount(0)}
-                            style={{ fontSize: 11, marginLeft: 'auto' }}
-                            className="btn btn-sm btn-outline"
-                        >
-                            Mark all read
-                        </button>
-                    )}
-                </div>
-            </div>
-            <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-                {alerts.map((alert, idx) => (
-                    <div key={idx} style={{ 
-                        padding: '12px 16px', 
-                        borderBottom: '1px solid #fecaca',
-                        background: idx < unreadCount ? '#fee2e2' : 'transparent',
-                    }}>
-                        <div style={{ fontWeight: 700 }}>
-                            {alert.patientName} · {alert.age}y
-                            <span style={{ 
-                                marginLeft: 8, 
-                                fontSize: 11, 
-                                background: '#dc2626', 
-                                color: '#fff',
-                                padding: '2px 8px',
-                                borderRadius: 20,
-                            }}>
-                                {alert.triageLevel}
-                            </span>
-                        </div>
-                        <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
-                            {alert.chiefComplaint}
-                        </div>
-                        <div style={{ fontSize: 11, color: '#991b1b', marginTop: 6 }}>
-                            ⏰ {new Date(alert.timestamp).toLocaleTimeString()}
-                        </div>
-                    </div>
-                ))}
-            </div>
+  if (alerts.length === 0) return null;
+
+  return (
+    <div className="card" style={{
+      marginBottom: 20,
+      border: '2px solid #dc2626',
+      background: '#fef2f2',
+    }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid #fecaca' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 20 }}>🚨</span>
+          <span style={{ fontWeight: 700, color: '#991b1b' }}>
+            Emergency Alerts ({unreadCount} new)
+          </span>
+          {unreadCount > 0 && (
+            <button
+              onClick={() => setUnreadCount(0)}
+              style={{ fontSize: 11, marginLeft: 'auto' }}
+              className="btn btn-sm btn-outline"
+            >
+              Mark all read
+            </button>
+          )}
         </div>
-    );
+      </div>
+      <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+        {alerts.map((alert, idx) => (
+          <div key={idx} style={{
+            padding: '12px 16px',
+            borderBottom: '1px solid #fecaca',
+            background: idx < unreadCount ? '#fee2e2' : 'transparent',
+          }}>
+            <div style={{ fontWeight: 700 }}>
+              {alert.patientName} · {alert.age}y
+              <span style={{
+                marginLeft: 8,
+                fontSize: 11,
+                background: '#dc2626',
+                color: '#fff',
+                padding: '2px 8px',
+                borderRadius: 20,
+              }}>
+                {alert.triageLevel}
+              </span>
+            </div>
+            <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+              {alert.chiefComplaint}
+            </div>
+            <div style={{ fontSize: 11, color: '#991b1b', marginTop: 6 }}>
+              ⏰ {new Date(alert.timestamp).toLocaleTimeString()}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
