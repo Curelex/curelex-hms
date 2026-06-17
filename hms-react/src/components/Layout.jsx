@@ -1,8 +1,9 @@
 // hms-react/src/components/Layout.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import API from '../utils/api';
+import taskService from '../services/taskService';
 
 // ── Nav definition ─────────────────────────────────────────────
 const NAV_SECTIONS = [
@@ -22,6 +23,7 @@ const NAV_SECTIONS = [
       { path: '/pharmacy', label: 'Pharmacy', icon: '💊', perm: 'pharmacy' },
       { path: '/lab', label: 'Lab Tests', icon: '🧪', perm: 'lab' },
       { path: '/tokens', label: 'Token Queue', icon: '🎫', perm: 'patients' },
+      { path: '/tasks', label: 'Task Allocation', icon: '📋', perm: 'dashboard' },
       { path: '/emergency', label: 'Emergency Dept', icon: '🚨', perm: 'patients' },
     ],
   },
@@ -47,6 +49,19 @@ const ROLE_META = {
 
 export default function Layout() {
   const { user, logout, hasPerm } = useAuth();
+  const [taskCount, setTaskCount] = useState(0);
+
+  useEffect(() => {
+    const fetchCount = async () => {
+      try {
+        const { data } = await taskService.getPendingCount();
+        setTaskCount(data.count);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    if (user) fetchCount();
+  }, [user]);
 
   const navigate = useNavigate();
   const [showConfirm, setShowConfirm] = useState(false);
@@ -152,7 +167,7 @@ export default function Layout() {
                   })}
                 >
                   <span style={{ fontSize: 15 }}>{icon}</span>
-                  <span>{label}</span>
+                  <span>{label === 'Task Allocation' && taskCount > 0 ? `Task Allocation [${taskCount}]` : label}</span>
                 </NavLink>
               ))}
             </div>

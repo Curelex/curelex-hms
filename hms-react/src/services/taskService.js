@@ -5,6 +5,7 @@ const taskService = {
   getAssignedTasks: () => API.get('/tasks/assigned'),
   getCreatedTasks: () => API.get('/tasks/created'),
   getHistoryTasks: () => API.get('/tasks/history'),
+  getPendingCount: () => API.get('/tasks/count'),
   updateTaskStatus: (id, formData) => API.put(`/tasks/${id}/status`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
