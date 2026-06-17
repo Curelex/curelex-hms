@@ -47,21 +47,31 @@ const ROLE_META = {
   lab_technician: { label: 'Lab Technician', color: '#fb923c', bg: 'rgba(251,146,60,0.15)' },
 };
 
+import { useSocket } from '../hooks/useSocket';
+
 export default function Layout() {
   const { user, logout, hasPerm } = useAuth();
   const [taskCount, setTaskCount] = useState(0);
+  const socket = useSocket();
+
+  const fetchCount = async () => {
+    try {
+      const { data } = await taskService.getPendingCount();
+      setTaskCount(data.count);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
-    const fetchCount = async () => {
-      try {
-        const { data } = await taskService.getPendingCount();
-        setTaskCount(data.count);
-      } catch (err) {
-        console.error(err);
-      }
-    };
     if (user) fetchCount();
-  }, [user]);
+    socket.on('task:new', fetchCount);
+    socket.on('task:updated', fetchCount);
+    return () => {
+        socket.off('task:new', fetchCount);
+        socket.off('task:updated', fetchCount);
+    };
+  }, [user, socket]);
 
   const navigate = useNavigate();
   const [showConfirm, setShowConfirm] = useState(false);
