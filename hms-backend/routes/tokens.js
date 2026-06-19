@@ -7,8 +7,8 @@ import bcrypt from "bcryptjs";
 
 import express from 'express';
 const router  = express.Router();
-import auth    from '../middleware/auth.js';
-import Token   from '../models/Token.js';
+const {auth}    = require('../middleware/auth');
+const Token   = require('../models/Token');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

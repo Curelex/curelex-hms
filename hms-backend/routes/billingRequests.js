@@ -9,9 +9,9 @@ import bcrypt from "bcryptjs";
 
 import express        from 'express';
 const router         = express.Router();
-import BillingRequest from '../models/BillingRequest.js';
-import Billing        from '../models/Billing.js';
-import auth           from '../middleware/auth.js';
+const BillingRequest = require('../models/BillingRequest');
+const Billing        = require('../models/Billing');
+const {auth}           = require('../middleware/auth');
 
 // ── GET all billing requests — scoped to clinic ───────────────────────────
 router.get('/', auth, async (req, res) => {

@@ -3,11 +3,11 @@ import path from 'path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import bcrypt from "bcryptjs";
 // hms-backend/routes/lab.js
-import express from 'express'; const router = express.Router();
-import Lab            from '../models/Lab.js';
-import BillingRequest from '../models/BillingRequest.js';
-import Patient        from '../models/Patient.js';
-import auth           from '../middleware/auth.js';
+const router         = require('express').Router();
+const Lab            = require('../models/Lab');
+const BillingRequest = require('../models/BillingRequest');
+const Patient        = require('../models/Patient');
+const {auth}           = require('../middleware/auth');
 
 // ── GET all lab tests — scoped to clinic ──────────────────────────────────
 router.get('/', auth, async (req, res) => {

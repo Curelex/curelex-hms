@@ -3,11 +3,11 @@ import path from 'path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import bcrypt from "bcryptjs";
 // hms-backend/routes/billing.js
-import express from 'express'; const router = express.Router();
-import Billing  from '../models/Billing.js';
-import Pharmacy from '../models/Pharmacy.js';
-import Lab      from '../models/Lab.js';
-import auth     from '../middleware/auth.js';
+const router   = require('express').Router();
+const Billing  = require('../models/Billing');
+const Pharmacy = require('../models/Pharmacy');
+const Lab      = require('../models/Lab');
+const {auth}     = require('../middleware/auth');
 
 const ROOM_RATES = {
   'General Ward': 800,

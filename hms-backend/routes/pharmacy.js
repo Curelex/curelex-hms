@@ -3,13 +3,13 @@ import path from 'path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import bcrypt from "bcryptjs";
 // hms-backend/routes/pharmacy.js
-import express from 'express'; const router = express.Router();
-import Pharmacy       from '../models/Pharmacy.js';
-import Inventory      from '../models/Inventory.js';
-import Billing        from '../models/Billing.js';
-import BillingRequest from '../models/BillingRequest.js';
-import Admission      from '../models/Admission.js';
-import auth           from '../middleware/auth.js';
+const router         = require('express').Router();
+const Pharmacy       = require('../models/Pharmacy');
+const Inventory      = require('../models/Inventory');
+const Billing        = require('../models/Billing');
+const BillingRequest = require('../models/BillingRequest');
+const Admission      = require('../models/Admission');
+const {auth}           = require('../middleware/auth');
 
 // ── GET /pharmacy/inventory/search?q=  ───────────────────────────────────────
 // MUST be before /:id route to avoid conflict

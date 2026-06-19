@@ -3,9 +3,9 @@ import path from 'path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import bcrypt from "bcryptjs";
 // hms-backend/routes/equipment.js
-import express from 'express'; const router = express.Router();
-import Inventory from '../models/Inventory.js';
-import auth      from '../middleware/auth.js';
+const router    = require('express').Router();
+const Inventory = require('../models/Inventory');
+const {auth}      = require('../middleware/auth');
 
 /**
  * Resolves clinicId from (in priority order):

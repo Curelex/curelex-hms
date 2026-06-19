@@ -4,9 +4,13 @@ import bcrypt from 'bcryptjs';
 
 const UserSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  email: { type: String, required: true },   // ✅ NOT globally unique — unique per clinic only
+  email: { type: String, required: true },
   password: { type: String, required: true },
-  role: { type: String, enum: ['admin', 'doctor', 'nurse', 'receptionist', 'pharmacist', 'lab_technician'], default: 'receptionist' },
+  role: { 
+    type: String, 
+    enum: ['admin', 'doctor', 'nurse', 'receptionist', 'pharmacist', 'lab_technician', 'patient'],
+    default: 'receptionist' 
+  },
   department: { type: String },
   phone: { type: String },
   avatar: {
@@ -27,8 +31,7 @@ const UserSchema = new mongoose.Schema({
     default: ['dashboard'],
   },
 
-  // ✅ NEW: Consultation fee — only relevant for doctors
-  // Shown in doctor dropdown during patient registration and auto-fills totalFee
+  // Consultation fee — only relevant for doctors
   consultationFee: {
     type: Number,
     default: 0,

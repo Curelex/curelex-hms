@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 // hms-backend/routes/dashboard.js
 import express from 'express';
 const router = express.Router();
-import auth from '../middleware/auth.js';
+const {auth} = require('../middleware/auth');
 
 import Patient from '../models/Patient.js';
 import Billing from '../models/Billing.js';

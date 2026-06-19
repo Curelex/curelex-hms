@@ -5,10 +5,10 @@ import bcrypt from "bcryptjs";
 // hms-backend/routes/admissions.js
 import express          from 'express';
 const router           = express.Router();
-import auth             from '../middleware/auth.js';
-import Admission        from '../models/Admission.js';
-import Patient          from '../models/Patient.js';
-import ClinicRoomConfig from '../models/ClinicRoomConfig.js';
+const {auth}             = require('../middleware/auth');
+const Admission        = require('../models/Admission');
+const Patient          = require('../models/Patient');
+const ClinicRoomConfig = require('../models/ClinicRoomConfig');
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function computeDays(admissionDate, dischargeDate) {

@@ -3,11 +3,11 @@ import path from 'path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import bcrypt from "bcryptjs";
 // hms-backend/routes/vendors.js
-import express from 'express'; const router = express.Router();
-import Vendor    from '../models/Vendor.js';
-import Inventory from '../models/Inventory.js';
-import auth      from '../middleware/auth.js';
-import roleCheck from '../middleware/roleCheck.js';
+const router    = require('express').Router();
+const Vendor    = require('../models/Vendor');
+const Inventory = require('../models/Inventory');
+const {auth}      = require('../middleware/auth');
+const roleCheck = require('../middleware/roleCheck');
 
 // ── GET vendor stats summary ─────────────────────────────────────
 router.get('/stats/summary', auth, async (req, res) => {

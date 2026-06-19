@@ -1,9 +1,9 @@
-// hms-react/src/pages/Login.jsx
+// hms-react/src/pages/PatientLogin.jsx
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-export default function Login() {
+export default function PatientLogin() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const { login, loading } = useAuth();
@@ -18,23 +18,35 @@ export default function Login() {
       if (result.user?.role === 'patient') {
         navigate('/patient-dashboard');
       } else {
-        navigate('/');
+        setError('This account is not registered as a patient. Please use staff login.');
       }
     } else {
-      setError(result.message);
+      setError(result.message || 'Invalid credentials');
     }
   };
 
   return (
     <div className="login-page">
-      <div className="login-card">
+      <div className="login-card" style={{ maxWidth: 420 }}>
         <div className="login-logo">
-          <div style={{ fontSize: 40, marginBottom: 8 }}>🏥</div>
-          <h1>MediCare HMS</h1>
-          <p>Hospital Management System</p>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>👤</div>
+          <h1>Patient Login</h1>
+          <p>Access your health records and appointments</p>
         </div>
 
-        {error && <div className="error-msg">{error}</div>}
+        {error && (
+          <div className="error-msg" style={{ 
+            background: '#fef2f2', 
+            color: '#dc2626', 
+            border: '1px solid #fca5a5',
+            padding: '10px 14px',
+            borderRadius: '8px',
+            marginBottom: '16px',
+            fontSize: '14px'
+          }}>
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
@@ -58,6 +70,9 @@ export default function Login() {
               onChange={e => setForm({ ...form, password: e.target.value })}
               required
             />
+            <small style={{ color: '#94a3b8', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+              If you were registered by receptionist, use the same password to login
+            </small>
           </div>
           <button
             className="btn btn-primary"
@@ -71,14 +86,14 @@ export default function Login() {
 
         <div style={{ textAlign: 'center', marginTop: 18, fontSize: 13, color: '#64748b' }}>
           Don't have an account?{' '}
-          <Link to="/register" style={{ color: '#0f4c81', fontWeight: 600, textDecoration: 'none' }}>
+          <Link to="/patient-register" style={{ color: '#0f4c81', fontWeight: 600, textDecoration: 'none' }}>
             Create Account
           </Link>
         </div>
 
         <div style={{ textAlign: 'center', marginTop: 12, paddingTop: 12, borderTop: '1px solid #e2e8f0' }}>
-          <Link to="/patient-login" style={{ color: '#0f4c81', fontWeight: 600, textDecoration: 'none', fontSize: 13 }}>
-            👤 Patient Login
+          <Link to="/login" style={{ color: '#94a3b8', textDecoration: 'none', fontSize: 13 }}>
+            ← Back to Staff Login
           </Link>
         </div>
       </div>
